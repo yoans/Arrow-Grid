@@ -48,44 +48,83 @@ import presets from './presets';
 import Chance from 'chance';
 import scales from './scales';
 
-// Intro Modal Component
+// Intro Modal Component - Music-focused welcome experience
 const IntroModal = ({ onClose }) => (
-    <div className="intro-modal-overlay" onClick={onClose}>
-        <div className="intro-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>🎵 Welcome to Arrow Grid!</h2>
-            <p>A musical toy where arrows bounce around, making sounds when they hit the edges.</p>
-            <div className="intro-instructions">
-                <div className="intro-step">
-                    <span className="intro-icon">▶️</span>
-                    <span><strong>Play</strong> to start the animation</span>
+    <div className="intro-overlay" onClick={onClose}>
+        <div className="intro-splash" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="intro-header">
+                <div className="intro-logo">
+                    <span className="logo-arrow">➤</span>
+                    <span className="logo-arrow delay1">➤</span>
+                    <span className="logo-arrow delay2">➤</span>
+                    <span className="logo-arrow delay3">➤</span>
                 </div>
-                <div className="intro-step">
-                    <span className="intro-icon">🖱️</span>
-                    <span><strong>Click the grid</strong> to add arrows</span>
+                <h1>Arrow Grid</h1>
+                <p className="intro-tagline">A generative music toy</p>
+            </div>
+
+            {/* How It Works - Visual Grid */}
+            <div className="intro-how">
+                <div className="intro-card">
+                    <div className="card-icon">
+                        <svg viewBox="0 0 24 24" width="32" height="32"><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
+                    </div>
+                    <div className="card-text">
+                        <strong>Play</strong>
+                        <span>Watch arrows bounce</span>
+                    </div>
+                    <kbd>Space</kbd>
                 </div>
-                <div className="intro-step">
-                    <span className="intro-icon">🔊</span>
-                    <span><strong>Unmute</strong> to hear the music</span>
+
+                <div className="intro-card">
+                    <div className="card-icon">
+                        <svg viewBox="0 0 24 24" width="32" height="32"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4" stroke="currentColor" strokeWidth="2" fill="none"/></svg>
+                    </div>
+                    <div className="card-text">
+                        <strong>Click</strong>
+                        <span>Add arrows to grid</span>
+                    </div>
+                    <kbd>Click</kbd>
                 </div>
-                <div className="intro-step">
-                    <span className="intro-icon">⏭️</span>
-                    <span><strong>Browse presets</strong> for inspiration</span>
+
+                <div className="intro-card">
+                    <div className="card-icon">
+                        <svg viewBox="0 0 24 24" width="32" height="32"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
+                    </div>
+                    <div className="card-text">
+                        <strong>Unmute</strong>
+                        <span>Hear the music</span>
+                    </div>
+                    <kbd>M</kbd>
+                </div>
+
+                <div className="intro-card">
+                    <div className="card-icon">
+                        <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM14.5 12L23 6v12l-8.5-6z" fill="currentColor"/></svg>
+                    </div>
+                    <div className="card-text">
+                        <strong>Explore</strong>
+                        <span>Browse presets</span>
+                    </div>
+                    <kbd>← →</kbd>
                 </div>
             </div>
-            <div className="intro-shortcuts">
-                <h4>⌨️ Keyboard Shortcuts</h4>
-                <div className="shortcut-grid">
-                    <span><kbd>Space</kbd> Play/Pause</span>
-                    <span><kbd>M</kbd> Mute/Unmute</span>
-                    <span><kbd>←</kbd><kbd>→</kbd> Change preset</span>
-                    <span><kbd>↑</kbd><kbd>↓</kbd> Arrow direction</span>
-                    <span><kbd>1-4</kbd> Arrows per click</span>
-                    <span><kbd>Delete</kbd> Clear grid</span>
-                </div>
+
+            {/* Quick Keys Reference */}
+            <div className="intro-keys">
+                <div className="key-item"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><span>Symmetry modes</span></div>
+                <div className="key-item"><kbd>E</kbd><span>Edit/Erase</span></div>
+                <div className="key-item"><kbd>Del</kbd><span>Clear all</span></div>
             </div>
-            <button className="intro-close-btn" onClick={onClose}>
-                Let's Go! 🚀
+
+            {/* CTA */}
+            <button className="intro-start" onClick={onClose}>
+                <span>Start Playing</span>
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
             </button>
+
+            <p className="intro-hint">Music starts automatically • Click anywhere to begin</p>
         </div>
     </div>
 );
