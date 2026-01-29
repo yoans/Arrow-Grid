@@ -1,15 +1,17 @@
 import React from 'react';
 import introJs from 'intro.js';
+import 'intro.js/introjs.css';
+import '../App.css';
 import {range} from 'ramda';
+import * as Tone from 'tone';
 import {
     PlayButton,
     PauseButton,
     MuteToggleButton,
     PrevButton,
     NextButton,
-} from 'react-player-controls';
+} from './buttons/player-controls';
 import {
-    makePizzaSound,
     musicalNotes
 } from './play-notes';
 import {
@@ -24,7 +26,7 @@ import {
     nextGrid as nextGridLogic,
     removeFromGrid,
     addToGrid
-} from './arrows-logic';
+} from './arrows-logic-optimized';  // 🚀 Using optimized implementation
 import {
     updateCanvas,
     setUpCanvas,
@@ -62,14 +64,28 @@ const maxSize = 20;
 const minSize = 2;
 const minNoteLength = -500;
 const maxNoteLength = -50;
+
+// Simple click sound using Tone.js
+let clickSynth = null;
+const getClickSynth = () => {
+    if (!clickSynth) {
+        clickSynth = new Tone.Synth({
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
+            volume: -20
+        }).toDestination();
+    }
+    return clickSynth;
+};
+
 const sound = {
-    play() {
-        // index, length, scale, musicalKey
-        const theSound = makePizzaSound(1, 0.001, [0], 60);
-        theSound.play();
-        setTimeout(() => {
-            theSound.stop();
-        }, 1);
+    async play() {
+        try {
+            await Tone.start();
+            getClickSynth().triggerAttackRelease('C5', 0.02);
+        } catch (e) {
+            // Ignore audio errors
+        }
     }
 };
 
@@ -99,10 +115,12 @@ export class Application extends React.Component {
             scale: scales[0].value,
             musicalKey: 60
         };
-        setUpCanvas(this.state);
     }
 
     componentDidMount() {
+        // Set up canvas after component is mounted (DOM is ready)
+        setUpCanvas(this.state);
+        
         const idsAndCallbacks = [
             {id: '#grid-size-slider', onChange: this.newSize},
             {id: '#note-length-slider', onChange: this.newNoteLength}
@@ -308,6 +326,7 @@ export class Application extends React.Component {
                                 max={maxNoteLength}
                                 min={minNoteLength}
                                 value={-1*this.state.noteLength}
+                                onChange={(e) => this.newNoteLength(e.target.value)}
                             />
                         </div>
                         <div
@@ -410,6 +429,7 @@ export class Application extends React.Component {
                                 max={maxSize}
                                 min={minSize}
                                 value={this.state.grid.size}
+                                onChange={(e) => this.newSize(e.target.value)}
                             />
                         </div>
                         <div className="slider-icon-container">
@@ -581,8 +601,8 @@ export class Application extends React.Component {
                 <select id="midiOut" className="arrow-input">
                     <option value="">Not connected</option>
                 </select>
-                <select value={this.state.scale} className="arrow-input" onChange={this.updateScale}>
-                    {scales.map((scale)=>(<option value={scale.value}>{scale.label}</option>))}
+                <select value={this.state.scale.toString()} className="arrow-input" onChange={this.updateScale}>
+                    {scales.map((scale, index)=>(<option key={index} value={scale.value}>{scale.label}</option>))}
                 </select>
                 <select value={this.state.musicalKey} className="arrow-input" onChange={this.updateMusicalKey}>
                     {
@@ -591,7 +611,7 @@ export class Application extends React.Component {
                                 label:musicalNotes[midiNote-21].toUpperCase(),value:midiNote
                             }))
                             .map((musicalKey)=>(
-                                <option value={musicalKey.value}>{musicalKey.label}</option>
+                                <option key={musicalKey.value} value={musicalKey.value}>{musicalKey.label}</option>
                             ))
                     }
                 </select>

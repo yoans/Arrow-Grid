@@ -3,8 +3,10 @@ let midiAccess = null;
 let midiOut = null;
 
 function onMIDIFail(err) {
-    document.getElementById('midiOut').outerHTML = '';
-    document.getElementById('midiOut-label').outerHTML = '';
+    const midiOutEl = document.getElementById('midiOut');
+    const midiOutLabelEl = document.getElementById('midiOut-label');
+    if (midiOutEl) midiOutEl.outerHTML = '';
+    if (midiOutLabelEl) midiOutLabelEl.outerHTML = '';
     // console.log(`MIDI initialization failed. ${err}`);
 }
 

@@ -398,6 +398,11 @@ export const setUpCanvas = (state) => {
     new p5(drawingContext);
 };
 export const updateCanvas = (state, date) => {
+    // Guard against being called before setUpCanvas
+    if (!stateDrawing) {
+        return;
+    }
+    
     if (state.playing !== stateDrawing.playing ||
         state.noteLength!==stateDrawing.noteLength ||
         state.grid.id!==stateDrawing.grid.id ||

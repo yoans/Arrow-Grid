@@ -1,16 +1,22 @@
-import $ from 'jquery';
-import {rangeslider} from 'rangeslider.js';
-
-const onSlideChange = (onChange) => (position, value) => {
-    onChange(value);
+const onSlideChange = (onChange) => (event) => {
+    onChange(event.target.value);
 };
 
-export const setSliderOnChange = (targetIdsAndCallbacks) => $(() => {
-    targetIdsAndCallbacks.map(({id, onChange}) => {
-        $(id).rangeslider({
-            polyfill: false,
-            onSlide: onSlideChange(onChange),
-            onSlideEnd: onSlideChange(onChange)
-        });
+export const setSliderOnChange = (targetIdsAndCallbacks) => {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => initSliders(targetIdsAndCallbacks));
+    } else {
+        initSliders(targetIdsAndCallbacks);
+    }
+};
+
+const initSliders = (targetIdsAndCallbacks) => {
+    targetIdsAndCallbacks.forEach(({ id, onChange }) => {
+        const element = document.querySelector(id);
+        if (element) {
+            element.addEventListener('input', onSlideChange(onChange));
+            element.addEventListener('change', onSlideChange(onChange));
+        }
     });
-});
+};
