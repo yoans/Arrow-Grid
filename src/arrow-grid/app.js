@@ -48,6 +48,47 @@ import presets from './presets';
 import Chance from 'chance';
 import scales from './scales';
 
+// Intro Modal Component
+const IntroModal = ({ onClose }) => (
+    <div className="intro-modal-overlay" onClick={onClose}>
+        <div className="intro-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>🎵 Welcome to Arrow Grid!</h2>
+            <p>A musical toy where arrows bounce around, making sounds when they hit the edges.</p>
+            <div className="intro-instructions">
+                <div className="intro-step">
+                    <span className="intro-icon">▶️</span>
+                    <span><strong>Play</strong> to start the animation</span>
+                </div>
+                <div className="intro-step">
+                    <span className="intro-icon">🖱️</span>
+                    <span><strong>Click the grid</strong> to add arrows</span>
+                </div>
+                <div className="intro-step">
+                    <span className="intro-icon">🔊</span>
+                    <span><strong>Unmute</strong> to hear the music</span>
+                </div>
+                <div className="intro-step">
+                    <span className="intro-icon">⏭️</span>
+                    <span><strong>Browse presets</strong> for inspiration</span>
+                </div>
+            </div>
+            <div className="intro-shortcuts">
+                <h4>⌨️ Keyboard Shortcuts</h4>
+                <div className="shortcut-grid">
+                    <span><kbd>Space</kbd> Play/Pause</span>
+                    <span><kbd>M</kbd> Mute/Unmute</span>
+                    <span><kbd>←</kbd><kbd>→</kbd> Change preset</span>
+                    <span><kbd>↑</kbd><kbd>↓</kbd> Arrow direction</span>
+                    <span><kbd>1-4</kbd> Arrows per click</span>
+                    <span><kbd>Delete</kbd> Clear grid</span>
+                </div>
+            </div>
+            <button className="intro-close-btn" onClick={onClose}>
+                Let's Go! 🚀
+            </button>
+        </div>
+    </div>
+);
 const chance = new Chance();
 
 const clickNext = () => {
@@ -99,11 +140,11 @@ export class Application extends React.Component {
 
         this.state = {
             tut: '',
-            currentPreset: -1,
+            currentPreset: 0,  // Start at first preset
             presets,
             inputDirection: 0,
             noteLength: props.noteLength || 350,
-            grid: props.grid || newGrid(8, 6),
+            grid: presets[0] || newGrid(8, 6),  // Start with first preset
             playing: false,
             muted: true,
             deleting: false,
@@ -113,7 +154,8 @@ export class Application extends React.Component {
             forwardDiagonalSymmetry: false,
             inputNumber: 1,
             scale: scales[0].value,
-            musicalKey: 60
+            musicalKey: 60,
+            showIntroModal: !localStorage.getItem('arrowgrid-intro-seen')
         };
     }
 
@@ -127,6 +169,106 @@ export class Application extends React.Component {
         ];
         setSliderOnChange(idsAndCallbacks);
         getAdderWithMousePosition(this.addToGrid)();
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', this.handleKeyDown);
+        
+        // Auto-play after a short delay to show users what the app does
+        setTimeout(() => {
+            if (!this.state.showIntroModal) {
+                this.play();
+            }
+        }, 500);
+    }
+    
+    componentWillUnmount() {
+        document.removeEventListener('keydown', this.handleKeyDown);
+        clearInterval(this.timerID);
+    }
+    
+    handleKeyDown = (e) => {
+        // Don't trigger shortcuts when typing in inputs
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        
+        switch (e.code) {
+            case 'Space':
+                e.preventDefault();
+                this.state.playing ? this.pause() : this.play();
+                break;
+            case 'KeyM':
+                this.muteToggle();
+                break;
+            case 'ArrowLeft':
+                e.preventDefault();
+                this.prevPreset();
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                this.nextPreset();
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                this.newInputDirection((this.state.inputDirection + 3) % 4);
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                this.newInputDirection((this.state.inputDirection + 1) % 4);
+                break;
+            case 'Digit1':
+                this.setState({ inputNumber: 1 });
+                break;
+            case 'Digit2':
+                this.setState({ inputNumber: 2 });
+                break;
+            case 'Digit3':
+                this.setState({ inputNumber: 3 });
+                break;
+            case 'Digit4':
+                this.setState({ inputNumber: 4 });
+                break;
+            case 'Delete':
+            case 'Backspace':
+                if (!e.target.tagName.match(/INPUT|TEXTAREA/)) {
+                    e.preventDefault();
+                    this.emptyGrid();
+                }
+                break;
+            case 'KeyE':
+                this.changeEditMode();
+                break;
+            default:
+                break;
+        }
+    }
+    
+    closeIntroModal = () => {
+        localStorage.setItem('arrowgrid-intro-seen', 'true');
+        this.setState({ showIntroModal: false });
+        // Auto-play after closing intro
+        setTimeout(() => this.play(), 300);
+    }
+    
+    prevPreset = () => {
+        let nextPresetIndex = this.state.currentPreset - 1;
+        if (nextPresetIndex < 0) {
+            nextPresetIndex = this.state.presets.length - 1;
+        }
+        this.setState({
+            grid: this.state.presets[nextPresetIndex],
+            currentPreset: nextPresetIndex
+        });
+    }
+    
+    nextPreset = () => {
+        clickNext();
+        let nextPresetIndex = this.state.currentPreset + 1;
+        if (nextPresetIndex >= this.state.presets.length) {
+            nextPresetIndex = 0;
+        }
+        this.setState({
+            grid: this.state.presets[nextPresetIndex],
+            currentPreset: nextPresetIndex
+        });
     }
 
     timerID = undefined
@@ -339,8 +481,8 @@ export class Application extends React.Component {
                     <div
                         className="edit-options-member"
                         data-step="8"
-                        data-intro="Hear the thing"
-                        title="Sound On/Off"
+                        data-intro="Turn on the sound to hear your creation! Each edge makes a different note."
+                        title="Sound On/Off (M)"
                     >
                         <MuteToggleButton
                             isEnabled={true}
@@ -355,7 +497,7 @@ export class Application extends React.Component {
                     <div
                         className="edit-options-member"
                         data-step="5"
-                        data-intro="Swipe Right"
+                        data-intro="Click anywhere on the grid to place arrows. They'll bounce around and make music!"
                     >
                         <div
                             className="edit-options-member"
@@ -496,6 +638,7 @@ export class Application extends React.Component {
                             inputNumber: ((this.state.inputNumber + 1) % 5) || 1
                         }
                     )}
+                    count={this.state.inputNumber}
                 />
                 <div className="edit-options">
                     {/*<PlusButton 
@@ -505,25 +648,19 @@ export class Application extends React.Component {
                     <div className="edit-options-member">
 
                         <PrevButton
-                            onClick={()=>{
-                                let NextPreset = this.state.currentPreset - 1;
-                                
-                                if (NextPreset<0) {
-                                    NextPreset = this.state.presets.length -1;
-                                }
- 
-                                this.setState({
-                                    grid: this.state.presets[NextPreset],
-                                    currentPreset: NextPreset
-                                });
-                            }}
+                            onClick={this.prevPreset}
                             isEnabled={true}
                         />
+                    </div>
+                    <div className="preset-counter">
+                        <span className="preset-number">{this.state.currentPreset + 1}</span>
+                        <span className="preset-divider">/</span>
+                        <span className="preset-total">{this.state.presets.length}</span>
                     </div> 
                     <div
                         className="edit-options-member"
                         data-step="1"
-                        data-intro="Start the thing"
+                        data-intro="Press Play to start the animation and watch the arrows bounce!"
                     >
                         <div
                             // data-step="7"
@@ -544,7 +681,7 @@ export class Application extends React.Component {
                     <div
                         className="edit-options-member" 
                         data-step="2"
-                        data-intro="Change the thing"
+                        data-intro="Browse through different preset patterns for inspiration!"
                     >
                     <div
                         className="edit-options-member" 
@@ -552,19 +689,7 @@ export class Application extends React.Component {
                         // data-intro="Again!"
                     >
                         <NextButton
-                            onClick={()=>{
-                                clickNext()
-                                let NextPreset = this.state.currentPreset + 1;
-                                
-                                if (NextPreset>=this.state.presets.length) {
-                                    NextPreset = 0;
-                                }
-
-                                this.setState({
-                                    grid: this.state.presets[NextPreset],
-                                    currentPreset: NextPreset
-                                });
-                            }}
+                            onClick={this.nextPreset}
                             isEnabled={true}
                         />
                     </div>
@@ -575,7 +700,7 @@ export class Application extends React.Component {
                     <div
                         className="edit-options-member"
                         data-step="4"
-                        data-intro="Trash the thing"
+                        data-intro="Clear the grid and start fresh!"
                     >
                         <TrashButton onClick={this.emptyGrid}/>
                     </div>
@@ -590,7 +715,7 @@ export class Application extends React.Component {
                         // data-intro="Share your creation on Facebook!"
                     >
                         <button
-                            title="Facebook Share"
+                            title="Share on Facebook"
                             className="ShareButton isEnabled"
                             onClick={this.share}
                         >
@@ -598,24 +723,37 @@ export class Application extends React.Component {
                         </button> 
                     </div>
                 </div>
-                <select id="midiOut" className="arrow-input">
-                    <option value="">Not connected</option>
-                </select>
-                <select value={this.state.scale.toString()} className="arrow-input" onChange={this.updateScale}>
-                    {scales.map((scale, index)=>(<option key={index} value={scale.value}>{scale.label}</option>))}
-                </select>
-                <select value={this.state.musicalKey} className="arrow-input" onChange={this.updateMusicalKey}>
-                    {
-                        range(21,109)
-                            .map((midiNote)=>({
-                                label:musicalNotes[midiNote-21].toUpperCase(),value:midiNote
-                            }))
-                            .map((musicalKey)=>(
-                                <option key={musicalKey.value} value={musicalKey.value}>{musicalKey.label}</option>
-                            ))
-                    }
-                </select>
                 
+                <div className="settings-section">
+                    <div className="settings-group">
+                        <label className="settings-label">MIDI Output</label>
+                        <select id="midiOut" className="arrow-input">
+                            <option value="">Not connected</option>
+                        </select>
+                    </div>
+                    <div className="settings-group">
+                        <label className="settings-label">Scale</label>
+                        <select value={this.state.scale.toString()} className="arrow-input" onChange={this.updateScale}>
+                            {scales.map((scale, index)=>(<option key={index} value={scale.value}>{scale.label}</option>))}
+                        </select>
+                    </div>
+                    <div className="settings-group">
+                        <label className="settings-label">Key</label>
+                        <select value={this.state.musicalKey} className="arrow-input" onChange={this.updateMusicalKey}>
+                            {
+                                range(21,109)
+                                    .map((midiNote)=>({
+                                        label:musicalNotes[midiNote-21].toUpperCase(),value:midiNote
+                                    }))
+                                    .map((musicalKey)=>(
+                                        <option key={musicalKey.value} value={musicalKey.value}>{musicalKey.label}</option>
+                                    ))
+                            }
+                        </select>
+                    </div>
+                </div>
+                
+                {this.state.showIntroModal && <IntroModal onClose={this.closeIntroModal} />}
             </div>
         );
     }

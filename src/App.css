@@ -1487,3 +1487,254 @@ a.introjs-button {
     cursor: default;
     display: block;
     padding: 8px 10px; }
+
+/* ===================================
+   UX IMPROVEMENTS - New Styles
+   =================================== */
+
+/* Intro Modal for First-Time Users */
+.intro-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.intro-modal {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 500px;
+  text-align: center;
+  color: white;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.4s ease-out;
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.intro-modal h1 {
+  font-size: 2.2em;
+  margin: 0 0 10px 0;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.intro-modal .tagline {
+  font-size: 1.1em;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 30px;
+}
+
+.intro-modal .quick-tips {
+  text-align: left;
+  margin-bottom: 30px;
+}
+
+.intro-modal .quick-tips h3 {
+  font-size: 1em;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 15px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.intro-modal .quick-tips ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.intro-modal .quick-tips li {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.intro-modal .quick-tips li:last-child {
+  border-bottom: none;
+}
+
+.intro-modal .quick-tips li span:first-child {
+  font-size: 1.3em;
+}
+
+.intro-modal kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: monospace;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.intro-modal .start-btn {
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border: none;
+  color: white;
+  padding: 14px 40px;
+  font-size: 1.1em;
+  font-weight: bold;
+  border-radius: 30px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.intro-modal .start-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+}
+
+.intro-modal .start-btn:active {
+  transform: scale(0.98);
+}
+
+/* Preset Counter */
+.preset-counter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9em;
+  font-weight: 500;
+  letter-spacing: 1px;
+  min-width: 60px;
+}
+
+.preset-counter .current {
+  color: white;
+  font-size: 1.1em;
+}
+
+/* Settings Section with Labels */
+.settings-section {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 15px;
+  padding: 15px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.settings-label {
+  font-size: 0.7em;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+/* Symmetry Button Active Indicator */
+.symmetry-active-indicator {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #4CAF50;
+  color: white;
+  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #1a1a2e;
+  font-weight: bold;
+}
+
+/* Plus Button Count Badge */
+.plus-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #764ba2;
+  color: white;
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #1a1a2e;
+  font-weight: bold;
+}
+
+/* Button wrapper for relative positioning of badges */
+.button-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* Tutorial improvements */
+.introjs-tooltip {
+  max-width: 350px;
+}
+
+.introjs-tooltiptext {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 600px) {
+  .intro-modal {
+    margin: 20px;
+    padding: 30px 20px;
+  }
+  
+  .intro-modal h1 {
+    font-size: 1.8em;
+  }
+  
+  .settings-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .settings-group {
+    width: 100%;
+  }
+  
+  .preset-counter {
+    font-size: 0.8em;
+  }
+}

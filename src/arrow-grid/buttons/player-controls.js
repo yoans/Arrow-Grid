@@ -5,7 +5,7 @@ export const PlayButton = ({ onClick, isEnabled }) => (
         className="PlayButton isEnabled"
         onClick={onClick}
         disabled={!isEnabled}
-        title="Play"
+        title="Play (Space)"
     >
         <svg viewBox="0 0 20 20" width="20" height="20">
             <polygon points="5,3 17,10 5,17" fill="white" />
@@ -17,7 +17,7 @@ export const PauseButton = ({ onClick }) => (
     <button
         className="PauseButton isEnabled"
         onClick={onClick}
-        title="Pause"
+        title="Pause (Space)"
     >
         <svg viewBox="0 0 20 20" width="20" height="20">
             <rect x="4" y="3" width="4" height="14" fill="white" />
@@ -31,7 +31,7 @@ export const MuteToggleButton = ({ isMuted, onMuteChange, isEnabled }) => (
         className={isMuted ? "SoundOffButton isEnabled" : "SoundOnButton isEnabled"}
         onClick={onMuteChange}
         disabled={!isEnabled}
-        title={isMuted ? "Unmute" : "Mute"}
+        title={isMuted ? "Turn Sound On (M)" : "Mute (M)"}
     >
         <svg viewBox="0 0 20 20" width="20" height="20">
             {isMuted ? (
@@ -55,7 +55,7 @@ export const PrevButton = ({ onClick, isEnabled }) => (
         className="PrevButton isEnabled"
         onClick={onClick}
         disabled={!isEnabled}
-        title="Previous"
+        title="Previous Preset (Left Arrow)"
     >
         <svg viewBox="0 0 20 20" width="20" height="20">
             <rect x="3" y="4" width="3" height="12" fill="white" />
@@ -69,7 +69,7 @@ export const NextButton = ({ onClick, isEnabled }) => (
         className="NextButton isEnabled"
         onClick={onClick}
         disabled={!isEnabled}
-        title="Next"
+        title="Next Preset (Right Arrow)"
     >
         <svg viewBox="0 0 20 20" width="20" height="20">
             <polygon points="3,4 13,10 3,16" fill="white" />
