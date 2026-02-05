@@ -20,7 +20,8 @@ let mouseIsPressed;
 const gridCanvasSize = 320;
 const gridCanvasBorderSize = 2;
 
-const arrowColor = [255, 255, 255, 45]
+// Theme colors
+const arrowColor = [102, 126, 234, 200]; // Accent Purple
 const convertPixelToIndex = pixel => Math.floor(
     (pixel - gridCanvasBorderSize) / cellSize
 );
@@ -168,19 +169,19 @@ export const setUpCanvas = (state) => {
             // draw grid
             sketch.push()
             sketch.strokeWeight(0);
-            sketch.fill(0, 0, 0, 70);
+            sketch.fill(18, 18, 31, 255); // --bg-card match
             sketch.rect(gridCanvasBorderSize, gridCanvasBorderSize, gridCanvasSize, gridCanvasSize);
             sketch.noFill();
             sketch.strokeWeight(gridCanvasBorderSize*2);
-            sketch.stroke(255, 255, 255, 160);
+            sketch.stroke(102, 126, 234, 100); // --accent-purple border
             sketch.rect(0, 0, gridCanvasSize+gridCanvasBorderSize*2, gridCanvasSize+gridCanvasBorderSize*2);
 
             sketch.pop();
             //draw grid lines
             cellSize = (gridCanvasSize * 1.0) / (1.0 * stateDrawing.grid.size);
             sketch.push();
-            sketch.stroke(30, 30, 30, 40);
-            sketch.strokeWeight(2);
+            sketch.stroke(255, 255, 255, 20); // Subtle white lines
+            sketch.strokeWeight(1);
             for (var i=1; i<stateDrawing.grid.size; i++) {
                 // horizontal
                 sketch.line(1+gridCanvasBorderSize, 1+gridCanvasBorderSize + i * cellSize, gridCanvasSize, 1 + i * cellSize);
