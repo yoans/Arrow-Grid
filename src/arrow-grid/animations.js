@@ -10,6 +10,26 @@ import {
 
 let stateDrawing;
 let previousTime;
+
+// Collision burst particles
+let particles = [];
+let lastBurstStep = -1;
+const spawnBurst = (cx, cy, cellSz) => {
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+        const speed = cellSz * (0.6 + Math.random() * 0.5);
+        particles.push({
+            x: cx, y: cy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.02,
+            size: cellSz * (0.15 + Math.random() * 0.2)
+        });
+    }
+};
+
 let mouseX = 1;
 let mouseY = 1;
 let mouseXstart = 1;
@@ -211,41 +231,35 @@ export const setUpCanvas = (state) => {
             );
             const boundaryDictionaryX = boundaryDictionary['x'] || [];
             const boundaryDictionaryY = boundaryDictionary['y'] || [];
-            // draw highlighted rows and columns
-            
-            if (stateDrawing.playing) {
-                const prepareDrawForColumnsAndRows = (topLeft) => {
-                    sketch.push();
-                    sketch.strokeWeight(0);
-                    // const scaledColor = 255*percentage*2+(percentage>.5?(-255*(percentage-.5)*2*2):0);
-                    const scaledColor = 200 - 200 * percentage;
-                    sketch.fill(scaledColor, scaledColor, scaledColor, scaledColor/3);
-                    translateAndRotate(topLeft, sketch, 0, cellSize);
-                    return scaledColor;
+            // Spawn burst particles at wall collisions once per grid step
+            if (stateDrawing.playing && stateDrawing.showCollisions && percentage > 0.92 && lastBurstStep !== stateDrawing.gridStep) {
+                lastBurstStep = stateDrawing.gridStep;
+                const allBoundary = [...boundaryDictionaryX, ...boundaryDictionaryY];
+                allBoundary.forEach((arrow) => {
+                    const cx = convertIndexToPixel(arrow.x) + cellSize / 2;
+                    const cy = convertIndexToPixel(arrow.y) + cellSize / 2;
+                    spawnBurst(cx, cy, cellSize);
+                });
+            }
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * 0.12;
+                p.y += p.vy * 0.12;
+                p.vx *= 0.92;
+                p.vy *= 0.92;
+                p.life -= p.decay;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
                 }
-                boundaryDictionaryX.map((arrow) => {
-                    const topLeft = {
-                        x:convertIndexToPixel(0),
-                        y:convertIndexToPixel(arrow.y)
-                    };
-
-                    prepareDrawForColumnsAndRows(topLeft);
-                    sketch.rect(0, 0, cellSize*stateDrawing.grid.size, cellSize)
-
-                    sketch.pop();
-                    return undefined;
-                });
-                boundaryDictionaryY.map((arrow) => {
-                    const topLeft = {
-                        x:convertIndexToPixel(arrow.x),
-                        y:convertIndexToPixel(0)
-                    };
-                    prepareDrawForColumnsAndRows(topLeft);
-                    sketch.rect(0, 0, cellSize, cellSize*stateDrawing.grid.size)
-
-                    sketch.pop();
-                    return undefined;
-                });
+                sketch.push();
+                sketch.noStroke();
+                const alpha = p.life * 180;
+                sketch.fill(102, 126, 234, alpha);
+                sketch.ellipse(p.x, p.y, p.size * p.life, p.size * p.life);
+                sketch.pop();
             }
             // draw arrows
 

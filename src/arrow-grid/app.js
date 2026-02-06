@@ -171,7 +171,8 @@ export class Application extends React.Component {
             scale: scales[0].value,
             musicalKey: 60,
             showIntroModal: !localStorage.getItem('arrowgrid-intro-seen'),
-            gridStep: 0
+            gridStep: 0,
+            showCollisions: true
         };
     }
 
@@ -538,6 +539,16 @@ export class Application extends React.Component {
                                 />
                                 <span className="slider-val">{this.state.grid.size}×{this.state.grid.size}</span>
                             </div>
+
+                            {/* Collision FX toggle */}
+                            <button
+                                className={`tool-btn wide ${this.state.showCollisions ? 'active' : ''}`}
+                                onClick={() => this.setState({ showCollisions: !this.state.showCollisions })}
+                                title="Toggle collision effects"
+                            >
+                                <svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".5"/><circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>
+                                <span>FX</span>
+                            </button>
                         </div>
 
                         {/* ── CENTER CANVAS ── */}
