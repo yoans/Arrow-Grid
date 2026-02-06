@@ -320,17 +320,23 @@ export class Application extends React.Component {
         this.setState({
             grid: {
                 ...this.state.grid,
-                id: chance.guid(),
                 size: input,
             },
         });
     }
     newNoteLength = (value) => {
-        this.resetTimer();
         const input = parseInt(value, 10);
+        clearInterval(this.timerID);
 
         this.setState({
             noteLength: -1 * input,
+        }, () => {
+            if (this.state.playing) {
+                this.timerID = setInterval(
+                    () => this.nextGrid(this.state.noteLength),
+                    this.state.noteLength,
+                );
+            }
         });
     }
     nextGrid = (length) => {

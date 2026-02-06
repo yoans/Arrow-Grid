@@ -403,16 +403,30 @@ export const updateCanvas = (state, date) => {
     if (!stateDrawing) {
         return;
     }
-    
-    if (state.playing !== stateDrawing.playing ||
-        state.noteLength!==stateDrawing.noteLength ||
-        state.grid.id!==stateDrawing.grid.id ||
-        state.currentPreset!==stateDrawing.currentPreset) {
 
-            if(state.noteLength!==stateDrawing.noteLength || date.getTime() - previousTime.getTime()>=stateDrawing.noteLength-40){
-                previousTime = date;
-            }
+    const noteLengthChanged = state.noteLength !== stateDrawing.noteLength;
+    const gridStepped = state.grid.id !== stateDrawing.grid.id;
+    const presetChanged = state.currentPreset !== stateDrawing.currentPreset;
+    const playStateChanged = state.playing !== stateDrawing.playing;
 
-            stateDrawing = state;
+    if (noteLengthChanged && stateDrawing.noteLength > 0) {
+        // Rescale previousTime so the current animation percentage is preserved
+        const elapsed = date.getTime() - previousTime.getTime();
+        const pct = Math.min(Math.max(elapsed / stateDrawing.noteLength, 0), 1);
+        previousTime = new Date(date.getTime() - pct * state.noteLength);
+    } else if (gridStepped || presetChanged) {
+        // Reset animation only on actual grid steps or preset switches
+        const elapsed = date.getTime() - previousTime.getTime();
+        if (elapsed >= stateDrawing.noteLength - 40) {
+            previousTime = date;
+        }
     }
+
+    if (playStateChanged && state.playing) {
+        // Starting playback — begin animation from 0 %
+        previousTime = date;
+    }
+
+    // Always sync so size, direction, and other changes propagate immediately
+    stateDrawing = state;
 };
