@@ -145,23 +145,29 @@ const moveArrow = arrow => vectorOperations[arrow.vector](arrow);
 export const arrowKey = arrow => `{x:${arrow.x},y:${arrow.y},vector:${arrow.vector}}`;
 export const locationKey = arrow => `{x:${arrow.x},y:${arrow.y}}`;
 
-export const arrowBoundaryKey = (arrow, size, rotations = 0) => {
-    const returnVal = boundaryKey(arrow, size, rotations);
+export const arrowBoundaryKey = (arrow, size, rotations = 0, walls) => {
+    const returnVal = boundaryKey(arrow, size, rotations, walls);
     return (returnVal === 'x' || returnVal === 'y') ? BOUNDARY: returnVal;
 };
 
-export const boundaryKey = (arrow, size, rotations = 0) => {
-    if (arrow.y === 0 && (arrow.vector + rotations) % 4 === 0) {
-        return 'y';
-    }
-    if (arrow.x === size - 1 && (arrow.vector + rotations) % 4 === 1) {
-        return 'x';
-    }
-    if (arrow.y === size - 1 && (arrow.vector + rotations) % 4 === 2) {
-        return 'y';
-    }
-    if (arrow.x === 0 && (arrow.vector + rotations) % 4 === 3) {
-        return 'x';
+export const boundaryKey = (arrow, size, rotations = 0, walls) => {
+    const v = (arrow.vector + rotations) % 4;
+    // Check exterior walls
+    if (arrow.y === 0 && v === 0) return 'y';
+    if (arrow.x === size - 1 && v === 1) return 'x';
+    if (arrow.y === size - 1 && v === 2) return 'y';
+    if (arrow.x === 0 && v === 3) return 'x';
+    // Check internal walls
+    if (walls && walls.length > 0) {
+        const wallSet = walls._set || (walls._set = new Set(walls));
+        // up: wall at h:(y-1):x
+        if (v === 0 && arrow.y > 0 && wallSet.has(`h:${arrow.y - 1}:${arrow.x}`)) return 'y';
+        // right: wall at v:y:x
+        if (v === 1 && arrow.x < size - 1 && wallSet.has(`v:${arrow.y}:${arrow.x}`)) return 'x';
+        // down: wall at h:y:x
+        if (v === 2 && arrow.y < size - 1 && wallSet.has(`h:${arrow.y}:${arrow.x}`)) return 'y';
+        // left: wall at v:y:(x-1)
+        if (v === 3 && arrow.x > 0 && wallSet.has(`v:${arrow.y}:${arrow.x - 1}`)) return 'x';
     }
     return NO_BOUNDARY;
 };
@@ -172,9 +178,9 @@ const rotateArrow = number => arrow => ({
 });
 const rotateSet = set => set.map(rotateArrow(set.length));
 const flipArrow = ({ vector, ...rest }) => ({ vector: (vector + 2) % 4, ...rest });
-export const getArrowBoundaryDictionary = (arrows, size, keyFunc, rotations) => arrows.reduce(
+export const getArrowBoundaryDictionary = (arrows, size, keyFunc, rotations, walls) => arrows.reduce(
     (arrowDictionary, arrow) => {
-        const key = keyFunc(arrow, size, rotations);
+        const key = keyFunc(arrow, size, rotations, walls);
         const arrayAtKey = [
             ...(newArrayIfFalsey(arrowDictionary[key])),
             arrow,

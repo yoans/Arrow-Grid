@@ -64,16 +64,26 @@ const rotateArrowInPlace = (arrow, offset) => {
 };
 
 /**
- * Check if arrow is at boundary and pointing outward
+ * Check if arrow is at boundary and pointing outward.
+ * Checks both exterior walls and internal walls (if wallSet provided).
  */
-const isAtBoundary = (arrow, size) => {
+const isAtBoundary = (arrow, size, wallSet) => {
     const { x, y, vector } = arrow;
-    return (
+    // Exterior walls
+    if (
         (y === 0 && vector === VECTOR_UP) ||
         (x === size - 1 && vector === VECTOR_RIGHT) ||
         (y === size - 1 && vector === VECTOR_DOWN) ||
         (x === 0 && vector === VECTOR_LEFT)
-    );
+    ) return true;
+    // Internal walls
+    if (wallSet && wallSet.size > 0) {
+        if (vector === VECTOR_UP && y > 0 && wallSet.has(`h:${y - 1}:${x}`)) return true;
+        if (vector === VECTOR_RIGHT && x < size - 1 && wallSet.has(`v:${y}:${x}`)) return true;
+        if (vector === VECTOR_DOWN && y < size - 1 && wallSet.has(`h:${y}:${x}`)) return true;
+        if (vector === VECTOR_LEFT && x > 0 && wallSet.has(`v:${y}:${x - 1}`)) return true;
+    }
+    return false;
 };
 
 /**
@@ -228,19 +238,27 @@ export const arrowBoundaryKey = (arrow, size) => {
     return isAtBoundary(arrow, size) ? 'boundary' : 'no-boundary';
 };
 
-export const boundaryKey = (arrow, size, rotations = 0) => {
+export const boundaryKey = (arrow, size, rotations = 0, walls) => {
     const vector = (arrow.vector + rotations) % 4;
     if (arrow.y === 0 && vector === 0) return 'y';
     if (arrow.x === size - 1 && vector === 1) return 'x';
     if (arrow.y === size - 1 && vector === 2) return 'y';
     if (arrow.x === 0 && vector === 3) return 'x';
+    // Internal walls
+    if (walls && walls.length > 0) {
+        const wallSet = walls._set || (walls._set = new Set(walls));
+        if (vector === 0 && arrow.y > 0 && wallSet.has(`h:${arrow.y - 1}:${arrow.x}`)) return 'y';
+        if (vector === 1 && arrow.x < size - 1 && wallSet.has(`v:${arrow.y}:${arrow.x}`)) return 'x';
+        if (vector === 2 && arrow.y < size - 1 && wallSet.has(`h:${arrow.y}:${arrow.x}`)) return 'y';
+        if (vector === 3 && arrow.x > 0 && wallSet.has(`v:${arrow.y}:${arrow.x - 1}`)) return 'x';
+    }
     return 'no-boundary';
 };
 
-export const getArrowBoundaryDictionary = (arrows, size, keyFunc, rotations) => {
+export const getArrowBoundaryDictionary = (arrows, size, keyFunc, rotations, walls) => {
     const dict = {};
     for (const arrow of arrows) {
-        const key = keyFunc(arrow, size, rotations);
+        const key = keyFunc(arrow, size, rotations, walls);
         if (!dict[key]) dict[key] = [];
         dict[key].push(arrow);
     }
@@ -258,6 +276,10 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
     if (arrowCount === 0) {
         return { ...grid, id: generateId() };
     }
+
+    // Build wall lookup set for internal walls
+    const walls = grid.walls || [];
+    const wallSet = walls.length > 0 ? new Set(walls) : null;
     
     // Step 1: Group by position+vector and reduce (mod 4)
     vectorMap.clear();
@@ -331,7 +353,7 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
     for (let i = 0; i < rotatedCount; i++) {
         const arrow = arrowBuffer2[i];
         
-        if (isAtBoundary(arrow, size)) {
+        if (isAtBoundary(arrow, size, wallSet)) {
             // At boundary: flip direction, then move
             boundaryArrows.push({ ...arrow }); // For sound
             flipArrowInPlace(arrow);
@@ -344,7 +366,7 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
     // Step 5: Check for arrows hitting boundary after movement (for sound)
     const soundArrows = [];
     for (const arrow of nextArrows) {
-        if (isAtBoundary(arrow, size)) {
+        if (isAtBoundary(arrow, size, wallSet)) {
             soundArrows.push(arrow);
         }
     }

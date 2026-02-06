@@ -36,6 +36,7 @@ let mouseXstart = 1;
 let mouseYstart = 1;
 let cellSize = 1;
 let thisArrowAdder = () => {};
+let thisWallToggler = () => {};
 let mouseIsPressed;
 const gridCanvasSize = 320;
 const gridCanvasBorderSize = 2;
@@ -62,6 +63,49 @@ export const getAdderWithMousePosition = (arrowAdder) => (e) => {
         arrowAdder(mouseXindex, mouseYindex, e);
     } else {
     }
+};
+export const setWallToggler = (wallToggler) => {
+    thisWallToggler = wallToggler;
+};
+
+/**
+ * Given pixel coordinates on the canvas, find the nearest internal cell edge.
+ * Returns a wall key like "h:y:x" or "v:y:x", or null if no valid edge.
+ * "h:y:x" = horizontal wall on the BOTTOM edge of cell (x,y)
+ * "v:y:x" = vertical wall on the RIGHT edge of cell (x,y)
+ */
+const nearestWallEdge = (px, py, gridSize) => {
+    const cs = (gridCanvasSize * 1.0) / (1.0 * gridSize);
+    // Position relative to grid interior
+    const gx = px - gridCanvasBorderSize;
+    const gy = py - gridCanvasBorderSize;
+    // Cell indices (float)
+    const fx = gx / cs;
+    const fy = gy / cs;
+    // Integer cell
+    const cx = Math.floor(fx);
+    const cy = Math.floor(fy);
+    // Fractional position within cell [0..1)
+    const dx = fx - cx;
+    const dy = fy - cy;
+    // Distance to each edge of THIS cell
+    const distTop = dy;
+    const distBottom = 1 - dy;
+    const distLeft = dx;
+    const distRight = 1 - dx;
+    const edgeThreshold = 0.35; // how close to edge counts
+    const candidates = [];
+    // Top edge → horizontal wall above this cell = bottom of cell (cx, cy-1)
+    if (distTop < edgeThreshold && cy > 0) candidates.push({ dist: distTop, key: `h:${cy - 1}:${cx}` });
+    // Bottom edge → horizontal wall below this cell
+    if (distBottom < edgeThreshold && cy < gridSize - 1) candidates.push({ dist: distBottom, key: `h:${cy}:${cx}` });
+    // Left edge → vertical wall left of this cell = right of cell (cx-1, cy)
+    if (distLeft < edgeThreshold && cx > 0) candidates.push({ dist: distLeft, key: `v:${cy}:${cx - 1}` });
+    // Right edge → vertical wall right of this cell
+    if (distRight < edgeThreshold && cx < gridSize - 1) candidates.push({ dist: distRight, key: `v:${cy}:${cx}` });
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.dist - b.dist);
+    return candidates[0].key;
 };
 export const setUpCanvas = (state) => {
     stateDrawing = state;
@@ -138,24 +182,27 @@ export const setUpCanvas = (state) => {
             mouseY = sketch.mouseY;
             mouseIsPressed = sketch.mouseIsPressed;
             
-            const setMouseStart = (e) => {
+            let lastClickTime = 0;
+            const handleCanvasClick = (e, fromTouch) => {
+                // Debounce double-fires from p5 event system
+                const now = Date.now();
+                if (now - lastClickTime < 50) return;
+                lastClickTime = now;
                 mouseXstart=mouseX;
                 mouseYstart=mouseY;
-                const mouseXindex = convertPixelToIndex(mouseX);
-                const mouseYindex = convertPixelToIndex(mouseY);
-                if(mouseIsInSketch()){
+                if (fromTouch && !mouseIsPressed) return;
+                if (!mouseIsInSketch()) return;
+                if (stateDrawing.drawMode === 'wall') {
+                    const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                    if (wallKey) thisWallToggler(wallKey);
+                } else {
+                    const mouseXindex = convertPixelToIndex(mouseX);
+                    const mouseYindex = convertPixelToIndex(mouseY);
                     thisArrowAdder(mouseXindex, mouseYindex, e, true);
                 }
             }
-            const setTouchStart = (e) => {
-                mouseXstart=mouseX;
-                mouseYstart=mouseY;
-                const mouseXindex = convertPixelToIndex(mouseX);
-                const mouseYindex = convertPixelToIndex(mouseY);
-                if(mouseIsPressed && mouseIsInSketch()){
-                    thisArrowAdder(mouseXindex, mouseYindex, e, true);
-                }
-            }
+            const setMouseStart = (e) => handleCanvasClick(e, false);
+            const setTouchStart = (e) => handleCanvasClick(e, true);
             const sameAsStart = ()=>{
                 const mouseXindex = convertPixelToIndex(mouseX);
                 const mouseYindex = convertPixelToIndex(mouseY);
@@ -173,14 +220,24 @@ export const setUpCanvas = (state) => {
             sketch.mousePressed = setMouseStart;
             sketch.mouseReleased = setMouseEnd;
 
+            let lastDragWall = null;
 
             const onDrag = (e) =>{
                 
-                if(mouseIsPressed && mouseIsInSketch() && !sameAsStart()){
-                    const mouseXindex = convertPixelToIndex(mouseX);
-                    const mouseYindex = convertPixelToIndex(mouseY);
-                    thisArrowAdder(mouseXindex, mouseYindex, e);
-                    e.preventDefault()
+                if(mouseIsPressed && mouseIsInSketch()){
+                    if (stateDrawing.drawMode === 'wall') {
+                        const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                        if (wallKey && wallKey !== lastDragWall) {
+                            lastDragWall = wallKey;
+                            thisWallToggler(wallKey);
+                        }
+                        if (e.preventDefault) e.preventDefault();
+                    } else if (!sameAsStart()) {
+                        const mouseXindex = convertPixelToIndex(mouseX);
+                        const mouseYindex = convertPixelToIndex(mouseY);
+                        thisArrowAdder(mouseXindex, mouseYindex, e);
+                        e.preventDefault()
+                    }
                 }
             }
             sketch.mouseDragged = onDrag;
@@ -210,6 +267,58 @@ export const setUpCanvas = (state) => {
             }
             sketch.pop();
 
+            // Draw internal walls
+            const walls = stateDrawing.grid.walls || [];
+            if (walls.length > 0) {
+                sketch.push();
+                sketch.stroke(102, 126, 234, 220); // accent-purple, bright
+                sketch.strokeWeight(gridCanvasBorderSize * 3);
+                sketch.strokeCap(sketch.SQUARE);
+                for (const wallKey of walls) {
+                    const parts = wallKey.split(':');
+                    const type = parts[0];
+                    const wy = parseInt(parts[1]);
+                    const wx = parseInt(parts[2]);
+                    if (type === 'h') {
+                        // Horizontal wall below cell (wx, wy)
+                        const px = gridCanvasBorderSize + wx * cellSize;
+                        const py = gridCanvasBorderSize + (wy + 1) * cellSize;
+                        sketch.line(px, py, px + cellSize, py);
+                    } else {
+                        // Vertical wall right of cell (wx, wy)
+                        const px = gridCanvasBorderSize + (wx + 1) * cellSize;
+                        const py = gridCanvasBorderSize + wy * cellSize;
+                        sketch.line(px, py, px, py + cellSize);
+                    }
+                }
+                sketch.pop();
+            }
+
+            // Draw wall placement preview on hover in wall mode
+            if (stateDrawing.drawMode === 'wall' && mouseIsInSketch()) {
+                const previewKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                if (previewKey) {
+                    sketch.push();
+                    sketch.stroke(102, 126, 234, 80); // ghost preview
+                    sketch.strokeWeight(gridCanvasBorderSize * 2);
+                    sketch.strokeCap(sketch.SQUARE);
+                    const parts = previewKey.split(':');
+                    const type = parts[0];
+                    const wy = parseInt(parts[1]);
+                    const wx = parseInt(parts[2]);
+                    if (type === 'h') {
+                        const px = gridCanvasBorderSize + wx * cellSize;
+                        const py = gridCanvasBorderSize + (wy + 1) * cellSize;
+                        sketch.line(px, py, px + cellSize, py);
+                    } else {
+                        const px = gridCanvasBorderSize + (wx + 1) * cellSize;
+                        const py = gridCanvasBorderSize + wy * cellSize;
+                        sketch.line(px, py, px, py + cellSize);
+                    }
+                    sketch.pop();
+                }
+            }
+
             const convertIndexToPixel = index => (index * cellSize) + gridCanvasBorderSize;
             const convertArrowToTopLeft = xy => (
                 {
@@ -227,18 +336,29 @@ export const setUpCanvas = (state) => {
             const boundaryDictionary = getArrowBoundaryDictionary(
                 stateDrawing.grid.arrows || [],
                 stateDrawing.grid.size,
-                boundaryKey
+                boundaryKey,
+                undefined,
+                stateDrawing.grid.walls || []
             );
             const boundaryDictionaryX = boundaryDictionary['x'] || [];
             const boundaryDictionaryY = boundaryDictionary['y'] || [];
-            // Spawn burst particles at wall collisions once per grid step
-            if (stateDrawing.playing && stateDrawing.showCollisions && percentage > 0.92 && lastBurstStep !== stateDrawing.gridStep) {
+            // Spawn burst particles at wall collisions at start of new grid step
+            if (stateDrawing.playing && stateDrawing.showCollisions && percentage < 0.08 && lastBurstStep !== stateDrawing.gridStep) {
                 lastBurstStep = stateDrawing.gridStep;
+                // Use the PREVIOUS step's boundary arrows (stored when grid stepped)
+                // Since arrows have already bounced, find arrows that just came FROM a wall
+                // i.e., arrows at edge cells pointing inward (they were flipped)
                 const allBoundary = [...boundaryDictionaryX, ...boundaryDictionaryY];
                 allBoundary.forEach((arrow) => {
-                    const cx = convertIndexToPixel(arrow.x) + cellSize / 2;
-                    const cy = convertIndexToPixel(arrow.y) + cellSize / 2;
-                    spawnBurst(cx, cy, cellSize);
+                    // Position burst at the wall edge, not cell center
+                    let bx = convertIndexToPixel(arrow.x) + cellSize / 2;
+                    let by = convertIndexToPixel(arrow.y) + cellSize / 2;
+                    // Shift burst toward the wall the arrow is heading to
+                    if (arrow.vector === 0) by = convertIndexToPixel(arrow.y);          // top wall
+                    if (arrow.vector === 2) by = convertIndexToPixel(arrow.y) + cellSize; // bottom wall
+                    if (arrow.vector === 3) bx = convertIndexToPixel(arrow.x);          // left wall
+                    if (arrow.vector === 1) bx = convertIndexToPixel(arrow.x) + cellSize; // right wall
+                    spawnBurst(bx, by, cellSize);
                 });
             }
 
@@ -285,7 +405,9 @@ export const setUpCanvas = (state) => {
             const arrowDictionary = getArrowBoundaryDictionary(
                 arrowsToNotRotateDictionary,
                 stateDrawing.grid.size,
-                arrowBoundaryKey
+                arrowBoundaryKey,
+                undefined,
+                stateDrawing.grid.walls || []
             );
             (arrowDictionary[NO_BOUNDARY] || []).map((arrow) => {
                 sketch.push();
@@ -342,7 +464,8 @@ export const setUpCanvas = (state) => {
                     arrowsToRotateDictionary[arrowsToRotateIndex],
                     stateDrawing.grid.size,
                     arrowBoundaryKey,
-                    rotations
+                    rotations,
+                    stateDrawing.grid.walls || []
                 );
                 const arrowsNotBouncing = bouncingDictionary[NO_BOUNDARY] || [];
                 arrowsNotBouncing.map((arrow) => {
@@ -378,19 +501,12 @@ export const setUpCanvas = (state) => {
             });
 
             // draw hover input
-            sketch.cursor(sketch.CROSS);
-            if (!stateDrawing.deleting) {
+            if (stateDrawing.drawMode === 'wall') {
+                sketch.cursor(sketch.CROSS);
+            } else if (stateDrawing.deleting) {
+                sketch.cursor(sketch.CROSS);
+            } else {
                 sketch.cursor(sketch.HAND);
-                // triangleDrawingArray[stateDrawing.inputDirection](
-                //     convertArrowToTopLeft(
-                //         {
-                //             x: mouseXindex,
-                //             y: mouseYindex
-                //         }
-                //     ),
-                //     cellSize,
-                //     sketch
-                // );
             }
             // eslint-disable-next-line no-param-reassign
             // sketch.touchEnded = (e) => {
