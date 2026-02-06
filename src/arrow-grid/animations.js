@@ -405,7 +405,7 @@ export const updateCanvas = (state, date) => {
     }
 
     const noteLengthChanged = state.noteLength !== stateDrawing.noteLength;
-    const gridStepped = state.grid.id !== stateDrawing.grid.id;
+    const gridStepped = state.gridStep !== stateDrawing.gridStep;
     const presetChanged = state.currentPreset !== stateDrawing.currentPreset;
     const playStateChanged = state.playing !== stateDrawing.playing;
 
@@ -414,19 +414,18 @@ export const updateCanvas = (state, date) => {
         const elapsed = date.getTime() - previousTime.getTime();
         const pct = Math.min(Math.max(elapsed / stateDrawing.noteLength, 0), 1);
         previousTime = new Date(date.getTime() - pct * state.noteLength);
-    } else if (gridStepped || presetChanged) {
-        // Reset animation only on actual grid steps or preset switches
-        const elapsed = date.getTime() - previousTime.getTime();
-        if (elapsed >= stateDrawing.noteLength - 40) {
-            previousTime = date;
-        }
     }
 
-    if (playStateChanged && state.playing) {
-        // Starting playback — begin animation from 0 %
+    if (gridStepped || presetChanged) {
+        // Reset animation cycle on actual grid steps or preset switches
         previousTime = date;
     }
 
-    // Always sync so size, direction, and other changes propagate immediately
+    if (playStateChanged && state.playing) {
+        // Starting playback — begin animation from 0%
+        previousTime = date;
+    }
+
+    // Always sync so size, arrows, direction, and other changes propagate immediately
     stateDrawing = state;
 };

@@ -170,7 +170,8 @@ export class Application extends React.Component {
             inputNumber: 1,
             scale: scales[0].value,
             musicalKey: 60,
-            showIntroModal: !localStorage.getItem('arrowgrid-intro-seen')
+            showIntroModal: !localStorage.getItem('arrowgrid-intro-seen'),
+            gridStep: 0
         };
     }
 
@@ -198,7 +199,7 @@ export class Application extends React.Component {
     
     componentWillUnmount() {
         document.removeEventListener('keydown', this.handleKeyDown);
-        clearInterval(this.timerID);
+        clearTimeout(this._timerID);
     }
     
     handleKeyDown = (e) => {
@@ -286,24 +287,29 @@ export class Application extends React.Component {
         });
     }
 
-    timerID = undefined
+    _timerID = undefined
+    _lastTickTime = 0
+
+    _scheduleNextTick = () => {
+        clearTimeout(this._timerID);
+        if (!this.state.playing) return;
+        const now = Date.now();
+        const elapsed = now - this._lastTickTime;
+        const remaining = Math.max(0, this.state.noteLength - elapsed);
+        this._timerID = setTimeout(() => {
+            this._lastTickTime = Date.now();
+            this.nextGrid(this.state.noteLength);
+            this._scheduleNextTick();
+        }, remaining);
+    }
 
     play = () => {
         clickNext();
-        this.timerID = setInterval(
-            () => this.nextGrid(this.state.noteLength),
-            this.state.noteLength,
-        );
-        this.setState({ playing: true });
-    }
-    resetTimer = () => {
-        clearInterval(this.timerID);
-        if (this.state.playing) {
-            this.play();
-        }
+        this._lastTickTime = Date.now();
+        this.setState({ playing: true }, () => this._scheduleNextTick());
     }
     pause = () => {
-        clearInterval(this.timerID);
+        clearTimeout(this._timerID);
         this.setState({ playing: false });
     }
     muteToggle = () => {
@@ -326,18 +332,9 @@ export class Application extends React.Component {
     }
     newNoteLength = (value) => {
         const input = parseInt(value, 10);
-        clearInterval(this.timerID);
-
         this.setState({
             noteLength: -1 * input,
-        }, () => {
-            if (this.state.playing) {
-                this.timerID = setInterval(
-                    () => this.nextGrid(this.state.noteLength),
-                    this.state.noteLength,
-                );
-            }
-        });
+        }, () => this._scheduleNextTick());
     }
     nextGrid = (length) => {
         this.setState({
@@ -348,7 +345,8 @@ export class Application extends React.Component {
             },
             length,
             this.state.scale,
-            this.state.musicalKey)
+            this.state.musicalKey),
+            gridStep: this.state.gridStep + 1
         });
     }
     newInputDirection = (inputDirection) => {
