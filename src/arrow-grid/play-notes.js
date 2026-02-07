@@ -24,6 +24,7 @@ const getIndex = (x, y, size, vector) => {
 // ============================================
 
 let audioInitialized = false;
+let audioInitPending = null;
 let synth = null;
 let filter = null;
 let reverb = null;
@@ -33,8 +34,17 @@ let limiter = null;
 // Initialize audio on first user interaction (required by browsers)
 async function initAudio() {
     if (audioInitialized) return;
+    // Prevent multiple concurrent init attempts
+    if (audioInitPending) return audioInitPending;
     
-    await Tone.start();
+    audioInitPending = (async () => {
+        try {
+            await Tone.start();
+        } catch (e) {
+            console.warn('Tone.start() failed (no user gesture yet):', e.message);
+            audioInitPending = null;
+            return; // bail out — will retry on next call
+        }
     
     // Limiter at the end to prevent ANY clipping (-1dB ceiling)
     limiter = new Tone.Limiter(-1).toDestination();
@@ -85,6 +95,8 @@ async function initAudio() {
     
     audioInitialized = true;
     console.log('Audio engine initialized');
+    })();
+    return audioInitPending;
 }
 
 // Create a formatted note name for Tone.js
@@ -101,19 +113,22 @@ export const makePizzaSound = (index, length, scale, musicalKey) => {
 
 // Play sounds for arrows that hit boundaries
 export const playSounds = async (boundaryArrows, size, length, muted, scale, musicalKey) => {
-    // Initialize audio on first play (required for browser autoplay policies)
-    if (!audioInitialized) {
-        await initAudio();
-    }
-    
-    if (muted || !synth) {
-        // Still send MIDI even when muted
+    try {
+    // When muted, only send MIDI (no audio init needed)
+    if (muted) {
         boundaryArrows.forEach((arrow) => {
             const noteToPlay = getIndex(arrow.x, arrow.y, size, arrow.vector);
             makeMIDImessage(musicalKey + scale[noteToPlay % scale.length], length).play();
         });
         return;
     }
+    
+    // Initialize audio on first unmuted play
+    if (!audioInitialized) {
+        await initAudio();
+    }
+    
+    if (!synth) return;
     
     // Collect unique notes to play (avoid duplicates)
     const notesToPlay = new Map();
@@ -145,6 +160,10 @@ export const playSounds = async (boundaryArrows, size, length, muted, scale, mus
             const offset = i * 0.002;
             synth.triggerAttackRelease(note, durationSec, now + offset, velocity);
         });
+    }
+    } catch (e) {
+        // Swallow audio errors — don't let them become unhandled rejections
+        console.warn('playSounds error:', e.message);
     }
 };
 

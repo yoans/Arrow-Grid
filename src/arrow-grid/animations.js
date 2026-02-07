@@ -343,9 +343,10 @@ export const setUpCanvas = (state) => {
             const boundaryDictionaryX = boundaryDictionary['x'] || [];
             const boundaryDictionaryY = boundaryDictionary['y'] || [];
             // Spawn burst particles at wall collisions at start of new grid step
-            if (stateDrawing.playing && stateDrawing.showCollisions && percentage < 0.08 && lastBurstStep !== stateDrawing.gridStep) {
+            if (stateDrawing.playing && stateDrawing.showCollisions && lastBurstStep !== stateDrawing.gridStep) {
                 lastBurstStep = stateDrawing.gridStep;
-                // Use the PREVIOUS step's boundary arrows (stored when grid stepped)
+                // Cap total particles to avoid lag at high speed
+                if (particles.length < 300) {
                 // Since arrows have already bounced, find arrows that just came FROM a wall
                 // i.e., arrows at edge cells pointing inward (they were flipped)
                 const allBoundary = [...boundaryDictionaryX, ...boundaryDictionaryY];
@@ -360,6 +361,7 @@ export const setUpCanvas = (state) => {
                     if (arrow.vector === 1) bx = convertIndexToPixel(arrow.x) + cellSize; // right wall
                     spawnBurst(bx, by, cellSize);
                 });
+                }
             }
 
             // Update and draw particles

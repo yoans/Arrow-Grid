@@ -1,6 +1,4 @@
 import React from 'react';
-import introJs from 'intro.js';
-import 'intro.js/introjs.css';
 import '../App.css';
 import {range} from 'ramda';
 import * as Tone from 'tone';
@@ -25,97 +23,7 @@ import presets from './presets';
 import Chance from 'chance';
 import scales from './scales';
 
-// Intro Modal Component - Music-focused welcome experience
-const IntroModal = ({ onClose }) => (
-    <div className="intro-overlay" onClick={onClose}>
-        <div className="intro-splash" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="intro-header">
-                <div className="intro-logo">
-                    <span className="logo-arrow">➤</span>
-                    <span className="logo-arrow delay1">➤</span>
-                    <span className="logo-arrow delay2">➤</span>
-                    <span className="logo-arrow delay3">➤</span>
-                </div>
-                <h1>Arrow Grid</h1>
-                <p className="intro-tagline">A generative music toy</p>
-            </div>
-
-            {/* How It Works - Visual Grid */}
-            <div className="intro-how">
-                <div className="intro-card">
-                    <div className="card-icon">
-                        <svg viewBox="0 0 24 24" width="32" height="32"><polygon points="5,3 19,12 5,21" fill="currentColor"/></svg>
-                    </div>
-                    <div className="card-text">
-                        <strong>Play</strong>
-                        <span>Watch arrows bounce</span>
-                    </div>
-                    <kbd>Space</kbd>
-                </div>
-
-                <div className="intro-card">
-                    <div className="card-icon">
-                        <svg viewBox="0 0 24 24" width="32" height="32"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4" stroke="currentColor" strokeWidth="2" fill="none"/></svg>
-                    </div>
-                    <div className="card-text">
-                        <strong>Click</strong>
-                        <span>Add arrows to grid</span>
-                    </div>
-                    <kbd>Click</kbd>
-                </div>
-
-                <div className="intro-card">
-                    <div className="card-icon">
-                        <svg viewBox="0 0 24 24" width="32" height="32"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
-                    </div>
-                    <div className="card-text">
-                        <strong>Unmute</strong>
-                        <span>Hear the music</span>
-                    </div>
-                    <kbd>M</kbd>
-                </div>
-
-                <div className="intro-card">
-                    <div className="card-icon">
-                        <svg viewBox="0 0 24 24" width="32" height="32"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM14.5 12L23 6v12l-8.5-6z" fill="currentColor"/></svg>
-                    </div>
-                    <div className="card-text">
-                        <strong>Explore</strong>
-                        <span>Browse presets</span>
-                    </div>
-                    <kbd>← →</kbd>
-                </div>
-            </div>
-
-            {/* Quick Keys Reference */}
-            <div className="intro-keys">
-                <div className="key-item"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><span>Symmetry modes</span></div>
-                <div className="key-item"><kbd>E</kbd><span>Edit/Erase</span></div>
-                <div className="key-item"><kbd>Del</kbd><span>Clear all</span></div>
-            </div>
-
-            {/* CTA */}
-            <button className="intro-start" onClick={onClose}>
-                <span>Start Playing</span>
-                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-            </button>
-
-            <p className="intro-hint">Music starts automatically • Click anywhere to begin</p>
-        </div>
-    </div>
-);
 const chance = new Chance();
-
-const clickNext = () => {
-    const nextButtonElement = document.querySelectorAll('.introjs-button.introjs-nextbutton')[0];
-    if (nextButtonElement) nextButtonElement.click();
-};
-
-const clickDone = () => {
-    const doneButtonElement = document.querySelectorAll('.introjs-button.introjs-donebutton')[0];
-    if (doneButtonElement) doneButtonElement.click();
-};
 
 const maxSize = 20;
 const minSize = 2;
@@ -138,7 +46,9 @@ const getClickSynth = () => {
 const sound = {
     async play() {
         try {
-            await Tone.start();
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+            }
             getClickSynth().triggerAttackRelease('C5', 0.02);
         } catch (e) {
             // Ignore audio errors
@@ -146,16 +56,11 @@ const sound = {
     }
 };
 
-const interactSound = (state) => {
-    if (!state.muted) sound.play();
-};
-
 export class Application extends React.Component {
     constructor(props) {
         super(props);
 
         this.state = {
-            tut: '',
             currentPreset: 0,  // Start at first preset
             presets,
             inputDirection: 0,
@@ -172,7 +77,7 @@ export class Application extends React.Component {
             inputNumber: 1,
             scale: scales[0].value,
             musicalKey: 60,
-            showIntroModal: !localStorage.getItem('arrowgrid-intro-seen'),
+
             gridStep: 0,
             showCollisions: true
         };
@@ -194,11 +99,7 @@ export class Application extends React.Component {
         document.addEventListener('keydown', this.handleKeyDown);
         
         // Auto-play after a short delay to show users what the app does
-        setTimeout(() => {
-            if (!this.state.showIntroModal) {
-                this.play();
-            }
-        }, 500);
+        setTimeout(() => this.play(), 500);
     }
     
     componentWillUnmount() {
@@ -264,13 +165,6 @@ export class Application extends React.Component {
         }
     }
     
-    closeIntroModal = () => {
-        localStorage.setItem('arrowgrid-intro-seen', 'true');
-        this.setState({ showIntroModal: false });
-        // Auto-play after closing intro
-        setTimeout(() => this.play(), 300);
-    }
-    
     prevPreset = () => {
         let nextPresetIndex = this.state.currentPreset - 1;
         if (nextPresetIndex < 0) {
@@ -283,7 +177,6 @@ export class Application extends React.Component {
     }
     
     nextPreset = () => {
-        clickNext();
         let nextPresetIndex = this.state.currentPreset + 1;
         if (nextPresetIndex >= this.state.presets.length) {
             nextPresetIndex = 0;
@@ -311,7 +204,6 @@ export class Application extends React.Component {
     }
 
     play = () => {
-        clickNext();
         this._lastTickTime = Date.now();
         this.setState({ playing: true }, () => this._scheduleNextTick());
     }
@@ -319,10 +211,17 @@ export class Application extends React.Component {
         clearTimeout(this._timerID);
         this.setState({ playing: false });
     }
-    muteToggle = () => {
-        clickDone();
-        this.setState({ muted: !this.state.muted });
-        interactSound(this.state);
+    muteToggle = async () => {
+        const willUnmute = this.state.muted;
+        // If unmuting, start audio context now (we're in a user gesture)
+        if (willUnmute) {
+            try {
+                await Tone.start();
+            } catch (e) { /* ignore */ }
+        }
+        this.setState({ muted: !this.state.muted }, () => {
+            if (!this.state.muted) sound.play();
+        });
     }
     changeEditMode = () => {
         this.setState({ deleting: !this.state.deleting, drawMode: 'arrow' });
@@ -388,14 +287,8 @@ export class Application extends React.Component {
         });
     }
     emptyGrid = () => {
-        clickNext();
         this.setState({
             grid: emptyGrid(this.state.grid.size),
-        });
-    }
-    removeTutHighlight = () => {
-        this.setState({
-            tut: '',
         });
     }
     addPreset = () => {
@@ -416,7 +309,6 @@ export class Application extends React.Component {
         // });
     }
     addToGrid = (x, y, e, forced) => {
-        clickNext();
         if (e.shiftKey || this.state.deleting) {
             this.setState({
                 grid: removeFromGrid(this.state.grid, x, y)
@@ -489,21 +381,6 @@ export class Application extends React.Component {
                                     <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
                                 )}
                                 <span>{this.state.muted ? 'Muted' : 'Sound'}</span>
-                            </button>
-                            <button 
-                                className="hdr-btn"
-                                onClick={()=>{
-                                    introJs()
-                                    .setOption('hideNext', true)
-                                    .setOption('hidePrev', true)
-                                    .setOption('showBullets', false)
-                                    .setOption('doneLabel', '✓')
-                                    .start();
-                                }}
-                                title="Help / Tutorial"
-                            >
-                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" fill="currentColor"/></svg>
-                                <span>Help</span>
                             </button>
                         </div>
                     </header>
@@ -710,8 +587,6 @@ export class Application extends React.Component {
                         </div>
                     </footer>
                 </div>
-                
-                {this.state.showIntroModal && <IntroModal onClose={this.closeIntroModal} />}
             </div>
         );
     }
