@@ -37,6 +37,8 @@ let mouseYstart = 1;
 let cellSize = 1;
 let thisArrowAdder = () => {};
 let thisWallToggler = () => {};
+let thisWallPlacer = () => {};
+let thisWallRemover = () => {};
 let mouseIsPressed;
 const gridCanvasSize = 320;
 const gridCanvasBorderSize = 2;
@@ -66,6 +68,12 @@ export const getAdderWithMousePosition = (arrowAdder) => (e) => {
 };
 export const setWallToggler = (wallToggler) => {
     thisWallToggler = wallToggler;
+};
+export const setWallPlacer = (wallPlacer) => {
+    thisWallPlacer = wallPlacer;
+};
+export const setWallRemover = (wallRemover) => {
+    thisWallRemover = wallRemover;
 };
 
 /**
@@ -172,6 +180,10 @@ export const setUpCanvas = (state) => {
     };
 
     const drawingContext = (sketch) => {
+        // Persistent state across frames (must NOT be inside sketch.draw)
+        let lastClickTime = 0;
+        let lastDragWall = null;
+
         // eslint-disable-next-line no-param-reassign
         sketch.setup = () => {
             sketch.createCanvas(gridCanvasSize + gridCanvasBorderSize * 2, gridCanvasSize + gridCanvasBorderSize * 2).parent('sketch-holder').id('arrows-animation');
@@ -182,19 +194,35 @@ export const setUpCanvas = (state) => {
             mouseY = sketch.mouseY;
             mouseIsPressed = sketch.mouseIsPressed;
             
-            let lastClickTime = 0;
             const handleCanvasClick = (e, fromTouch) => {
                 // Debounce double-fires from p5 event system
                 const now = Date.now();
-                if (now - lastClickTime < 50) return;
+                if (now - lastClickTime < 100) return;
                 lastClickTime = now;
                 mouseXstart=mouseX;
                 mouseYstart=mouseY;
                 if (fromTouch && !mouseIsPressed) return;
                 if (!mouseIsInSketch()) return;
-                if (stateDrawing.drawMode === 'wall') {
+                if (stateDrawing.deleting) {
+                    // Erase mode: remove arrows at cell AND remove closest wall
+                    const mouseXindex = convertPixelToIndex(mouseX);
+                    const mouseYindex = convertPixelToIndex(mouseY);
+                    thisArrowAdder(mouseXindex, mouseYindex, e, true);
                     const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
-                    if (wallKey) thisWallToggler(wallKey);
+                    if (wallKey) thisWallRemover(wallKey);
+                } else if (stateDrawing.drawMode === 'wall') {
+                    if (!stateDrawing.wallClosest && stateDrawing.wallSides && stateDrawing.wallSides.size > 0) {
+                        // Specific side(s) mode: place walls on all selected sides of the clicked cell
+                        const cellX = convertPixelToIndex(mouseX);
+                        const cellY = convertPixelToIndex(mouseY);
+                        if (cellX >= 0 && cellX < stateDrawing.grid.size && cellY >= 0 && cellY < stateDrawing.grid.size) {
+                            thisWallPlacer(cellX, cellY, stateDrawing.wallSides);
+                        }
+                    } else {
+                        // Closest mode: toggle nearest edge
+                        const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                        if (wallKey) thisWallToggler(wallKey);
+                    }
                 } else {
                     const mouseXindex = convertPixelToIndex(mouseX);
                     const mouseYindex = convertPixelToIndex(mouseY);
@@ -213,6 +241,7 @@ export const setUpCanvas = (state) => {
             const setMouseEnd = (e) => {
                 mouseXstart=-1000;
                 mouseYstart=-1000;
+                lastDragWall = null;
             }
             
             sketch.touchStarted = setTouchStart;
@@ -220,18 +249,42 @@ export const setUpCanvas = (state) => {
             sketch.mousePressed = setMouseStart;
             sketch.mouseReleased = setMouseEnd;
 
-            let lastDragWall = null;
-
             const onDrag = (e) =>{
                 
                 if(mouseIsPressed && mouseIsInSketch()){
-                    if (stateDrawing.drawMode === 'wall') {
+                    if (stateDrawing.deleting) {
+                        // Erase mode on drag: remove arrows AND closest wall
+                        if (!sameAsStart()) {
+                            const mouseXindex = convertPixelToIndex(mouseX);
+                            const mouseYindex = convertPixelToIndex(mouseY);
+                            thisArrowAdder(mouseXindex, mouseYindex, e);
+                        }
                         const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
                         if (wallKey && wallKey !== lastDragWall) {
                             lastDragWall = wallKey;
-                            thisWallToggler(wallKey);
+                            thisWallRemover(wallKey);
                         }
                         if (e.preventDefault) e.preventDefault();
+                    } else if (stateDrawing.drawMode === 'wall') {
+                        if (!stateDrawing.wallClosest && stateDrawing.wallSides && stateDrawing.wallSides.size > 0) {
+                            const cellX = convertPixelToIndex(mouseX);
+                            const cellY = convertPixelToIndex(mouseY);
+                            if (cellX >= 0 && cellX < stateDrawing.grid.size && cellY >= 0 && cellY < stateDrawing.grid.size) {
+                                const dragKey = `sides:${cellX}:${cellY}`;
+                                if (dragKey !== lastDragWall) {
+                                    lastDragWall = dragKey;
+                                    thisWallPlacer(cellX, cellY, stateDrawing.wallSides);
+                                }
+                            }
+                            if (e.preventDefault) e.preventDefault();
+                        } else {
+                            const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                            if (wallKey && wallKey !== lastDragWall) {
+                                lastDragWall = wallKey;
+                                thisWallToggler(wallKey);
+                            }
+                            if (e.preventDefault) e.preventDefault();
+                        }
                     } else if (!sameAsStart()) {
                         const mouseXindex = convertPixelToIndex(mouseX);
                         const mouseYindex = convertPixelToIndex(mouseY);
@@ -272,7 +325,7 @@ export const setUpCanvas = (state) => {
             if (walls.length > 0) {
                 sketch.push();
                 sketch.stroke(102, 126, 234, 220); // accent-purple, bright
-                sketch.strokeWeight(gridCanvasBorderSize * 3);
+                sketch.strokeWeight(gridCanvasBorderSize * 1.5);
                 sketch.strokeCap(sketch.SQUARE);
                 for (const wallKey of walls) {
                     const parts = wallKey.split(':');
@@ -294,27 +347,78 @@ export const setUpCanvas = (state) => {
                 sketch.pop();
             }
 
-            // Draw wall placement preview on hover in wall mode
-            if (stateDrawing.drawMode === 'wall' && mouseIsInSketch()) {
-                const previewKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
-                if (previewKey) {
-                    sketch.push();
-                    sketch.stroke(102, 126, 234, 80); // ghost preview
-                    sketch.strokeWeight(gridCanvasBorderSize * 2);
-                    sketch.strokeCap(sketch.SQUARE);
-                    const parts = previewKey.split(':');
-                    const type = parts[0];
-                    const wy = parseInt(parts[1]);
-                    const wx = parseInt(parts[2]);
-                    if (type === 'h') {
-                        const px = gridCanvasBorderSize + wx * cellSize;
-                        const py = gridCanvasBorderSize + (wy + 1) * cellSize;
-                        sketch.line(px, py, px + cellSize, py);
+            // Draw hover previews based on draw mode
+            if (mouseIsInSketch() && !stateDrawing.deleting) {
+                const hoverCellX = convertPixelToIndex(mouseX);
+                const hoverCellY = convertPixelToIndex(mouseY);
+                const inBounds = hoverCellX >= 0 && hoverCellX < stateDrawing.grid.size && hoverCellY >= 0 && hoverCellY < stateDrawing.grid.size;
+
+                if (stateDrawing.drawMode === 'wall') {
+                    if (!stateDrawing.wallClosest && stateDrawing.wallSides && stateDrawing.wallSides.size > 0 && inBounds) {
+                        // Preview selected wall sides on hovered cell
+                        sketch.push();
+                        sketch.stroke(102, 126, 234, 80);
+                        sketch.strokeWeight(gridCanvasBorderSize * 1.5);
+                        sketch.strokeCap(sketch.SQUARE);
+                        const cx = hoverCellX;
+                        const cy = hoverCellY;
+                        const sz = stateDrawing.grid.size;
+                        if (stateDrawing.wallSides.has('top') && cy > 0) {
+                            const px = gridCanvasBorderSize + cx * cellSize;
+                            const py = gridCanvasBorderSize + cy * cellSize;
+                            sketch.line(px, py, px + cellSize, py);
+                        }
+                        if (stateDrawing.wallSides.has('bottom') && cy < sz - 1) {
+                            const px = gridCanvasBorderSize + cx * cellSize;
+                            const py = gridCanvasBorderSize + (cy + 1) * cellSize;
+                            sketch.line(px, py, px + cellSize, py);
+                        }
+                        if (stateDrawing.wallSides.has('left') && cx > 0) {
+                            const px = gridCanvasBorderSize + cx * cellSize;
+                            const py = gridCanvasBorderSize + cy * cellSize;
+                            sketch.line(px, py, px, py + cellSize);
+                        }
+                        if (stateDrawing.wallSides.has('right') && cx < sz - 1) {
+                            const px = gridCanvasBorderSize + (cx + 1) * cellSize;
+                            const py = gridCanvasBorderSize + cy * cellSize;
+                            sketch.line(px, py, px, py + cellSize);
+                        }
+                        sketch.pop();
                     } else {
-                        const px = gridCanvasBorderSize + (wx + 1) * cellSize;
-                        const py = gridCanvasBorderSize + wy * cellSize;
-                        sketch.line(px, py, px, py + cellSize);
+                        // Closest mode: preview nearest edge
+                        const previewKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                        if (previewKey) {
+                            sketch.push();
+                            sketch.stroke(102, 126, 234, 80);
+                            sketch.strokeWeight(gridCanvasBorderSize * 1.5);
+                            sketch.strokeCap(sketch.SQUARE);
+                            const parts = previewKey.split(':');
+                            const type = parts[0];
+                            const wy = parseInt(parts[1]);
+                            const wx = parseInt(parts[2]);
+                            if (type === 'h') {
+                                const px = gridCanvasBorderSize + wx * cellSize;
+                                const py = gridCanvasBorderSize + (wy + 1) * cellSize;
+                                sketch.line(px, py, px + cellSize, py);
+                            } else {
+                                const px = gridCanvasBorderSize + (wx + 1) * cellSize;
+                                const py = gridCanvasBorderSize + wy * cellSize;
+                                sketch.line(px, py, px, py + cellSize);
+                            }
+                            sketch.pop();
+                        }
                     }
+                } else if (stateDrawing.drawMode === 'arrow' && inBounds) {
+                    // Arrow mode: show ghost arrow preview on hovered cell
+                    sketch.push();
+                    sketch.strokeWeight(0);
+                    sketch.fill(102, 126, 234, 60);
+                    const topLeft = {
+                        x: gridCanvasBorderSize + hoverCellX * cellSize,
+                        y: gridCanvasBorderSize + hoverCellY * cellSize
+                    };
+                    const dir = stateDrawing.inputDirection;
+                    triangleDrawingArray[dir](topLeft, cellSize, sketch);
                     sketch.pop();
                 }
             }
@@ -503,9 +607,7 @@ export const setUpCanvas = (state) => {
             });
 
             // draw hover input
-            if (stateDrawing.drawMode === 'wall') {
-                sketch.cursor(sketch.CROSS);
-            } else if (stateDrawing.deleting) {
+            if (stateDrawing.deleting) {
                 sketch.cursor(sketch.CROSS);
             } else {
                 sketch.cursor(sketch.HAND);

@@ -16,9 +16,12 @@ import {
     updateCanvas,
     setUpCanvas,
     getAdderWithMousePosition,
-    setWallToggler
+    setWallToggler,
+    setWallPlacer,
+    setWallRemover
 } from './animations';
 import {setSliderOnChange} from './sliders';
+import { rescanMIDI } from './midi';
 import presets from './presets';
 import Chance from 'chance';
 import scales from './scales';
@@ -70,10 +73,13 @@ export class Application extends React.Component {
             muted: true,
             deleting: false,
             drawMode: 'arrow',  // 'arrow' or 'wall'
+            wallSides: new Set(),  // multi-select: 'top','bottom','left','right'
+            wallClosest: true,     // 'closest' mode (mutually exclusive with sides)
             horizontalSymmetry: false,
             verticalSymmetry: false,
             backwardDiagonalSymmetry: false,
             forwardDiagonalSymmetry: false,
+            arrowRotationStep: 0,  // cumulative rotation counter for smooth animation
             inputNumber: 1,
             scale: scales[0].value,
             musicalKey: 60,
@@ -94,6 +100,8 @@ export class Application extends React.Component {
         setSliderOnChange(idsAndCallbacks);
         getAdderWithMousePosition(this.addToGrid)();
         setWallToggler(this.toggleWall);
+        setWallPlacer(this.addWallAtCell);
+        setWallRemover(this.removeWall);
         
         // Add keyboard shortcuts
         document.addEventListener('keydown', this.handleKeyDown);
@@ -129,11 +137,11 @@ export class Application extends React.Component {
                 break;
             case 'ArrowUp':
                 e.preventDefault();
-                this.newInputDirection((this.state.inputDirection + 3) % 4);
+                this.newInputDirection((this.state.inputDirection + 3) % 4, -1);
                 break;
             case 'ArrowDown':
                 e.preventDefault();
-                this.newInputDirection((this.state.inputDirection + 1) % 4);
+                this.newInputDirection((this.state.inputDirection + 1) % 4, 1);
                 break;
             case 'Digit1':
                 this.setState({ inputNumber: 1 });
@@ -158,7 +166,7 @@ export class Application extends React.Component {
                 this.changeEditMode();
                 break;
             case 'KeyW':
-                this.setState({ deleting: false, drawMode: this.state.drawMode === 'wall' ? 'arrow' : 'wall' });
+                this.setState({ deleting: false, drawMode: this.state.drawMode === 'wall' ? 'arrow' : 'wall', wallSides: new Set(), wallClosest: true });
                 break;
             default:
                 break;
@@ -224,7 +232,7 @@ export class Application extends React.Component {
         });
     }
     changeEditMode = () => {
-        this.setState({ deleting: !this.state.deleting, drawMode: 'arrow' });
+        this.setState({ deleting: !this.state.deleting });
     }
     toggleWall = (wallKey) => {
         const walls = this.state.grid.walls || [];
@@ -233,6 +241,16 @@ export class Application extends React.Component {
             ? walls.filter((_, i) => i !== idx)
             : [...walls, wallKey];
         // Invalidate cached Set so boundary checks rebuild it
+        newWalls._set = undefined;
+        this.setState({
+            grid: { ...this.state.grid, walls: newWalls }
+        });
+    }
+    removeWall = (wallKey) => {
+        const walls = this.state.grid.walls || [];
+        const idx = walls.indexOf(wallKey);
+        if (idx < 0) return; // wall doesn't exist, nothing to remove
+        const newWalls = walls.filter((_, i) => i !== idx);
         newWalls._set = undefined;
         this.setState({
             grid: { ...this.state.grid, walls: newWalls }
@@ -276,9 +294,10 @@ export class Application extends React.Component {
             gridStep: this.state.gridStep + 1
         });
     }
-    newInputDirection = (inputDirection) => {
+    newInputDirection = (inputDirection, delta = 1) => {
         this.setState({
             inputDirection,
+            arrowRotationStep: this.state.arrowRotationStep + delta,
         });
     }
     newGrid = (number, size) => {
@@ -307,6 +326,46 @@ export class Application extends React.Component {
         //         )
         //     ]
         // });
+    }
+    addWallAtCell = (x, y, sideOrSides) => {
+        const size = this.state.grid.size;
+        const sides = sideOrSides instanceof Set ? sideOrSides : new Set([sideOrSides]);
+        // Collect all wall keys first, then toggle them in a single setState
+        const wallKeys = [];
+        for (const side of sides) {
+            let wallKey = null;
+            switch (side) {
+                case 'top':
+                    if (y > 0) wallKey = `h:${y - 1}:${x}`;
+                    break;
+                case 'bottom':
+                    if (y < size - 1) wallKey = `h:${y}:${x}`;
+                    break;
+                case 'left':
+                    if (x > 0) wallKey = `v:${y}:${x - 1}`;
+                    break;
+                case 'right':
+                    if (x < size - 1) wallKey = `v:${y}:${x}`;
+                    break;
+                default:
+                    break;
+            }
+            if (wallKey) wallKeys.push(wallKey);
+        }
+        if (wallKeys.length === 0) return;
+        let walls = [...(this.state.grid.walls || [])];
+        for (const key of wallKeys) {
+            const idx = walls.indexOf(key);
+            if (idx >= 0) {
+                walls.splice(idx, 1);
+            } else {
+                walls.push(key);
+            }
+        }
+        walls._set = undefined;
+        this.setState({
+            grid: { ...this.state.grid, walls }
+        });
     }
     addToGrid = (x, y, e, forced) => {
         if (e.shiftKey || this.state.deleting) {
@@ -355,9 +414,10 @@ export class Application extends React.Component {
         const newDate = new Date();
         updateCanvas(this.state, newDate);
         
-        // Direction labels & rotation degrees for the arrow SVG
-        const dirLabels = ["Left","Up","Right","Down"];
-        const dirRotation = [180, 270, 0, 90];
+        // Direction labels for the arrow SVG
+        const dirLabels = ["Up","Right","Down","Left"];
+        // Continuous rotation: each step adds 90°. At step 0, direction 0 = Up = -90° from the right-pointing SVG
+        const arrowRotationDeg = 270 + this.state.arrowRotationStep * 90;
         
         return (
             <div className="app-container">
@@ -463,58 +523,101 @@ export class Application extends React.Component {
                         {/* ── RIGHT PANEL ── */}
                         <div className="side-panel">
                             {/* Draw Tools */}
-                            <div className="panel-group">
+                            <div className="panel-group draw-panel">
                                 <h3>Draw</h3>
-                                <div className="tool-row">
-                                    {/* Direction */}
-                                    <button 
-                                        className={`tool-btn ${!this.state.deleting && this.state.drawMode === 'arrow' ? 'active' : ''}`}
-                                        onClick={() => { this.setState({ drawMode: 'arrow', deleting: false }); this.newInputDirection((this.state.inputDirection + 1) % 4); }}
-                                        title={`Direction: ${dirLabels[this.state.inputDirection]} (click to rotate)`}
+                                {/* Mode toggle: Draw / Erase */}
+                                <div className="draw-mode-toggle">
+                                    <button
+                                        className={`mode-btn ${!this.state.deleting ? 'active' : ''}`}
+                                        onClick={() => this.setState({ deleting: false })}
+                                        title="Draw / Add mode"
                                     >
-                                        <svg viewBox="0 0 24 24" width="20" height="20" style={{transform: `rotate(${dirRotation[this.state.inputDirection]}deg)`, transition: 'transform 0.2s ease'}}>
-                                            <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" fill="currentColor"/>
-                                        </svg>
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+                                        <span>Draw</span>
                                     </button>
-                                    {/* Count */}
-                                    <button 
-                                        className={`tool-btn ${!this.state.deleting && this.state.drawMode === 'arrow' ? 'active' : ''}`}
-                                        onClick={() => this.setState({inputNumber: ((this.state.inputNumber) % 4) + 1, drawMode: 'arrow', deleting: false})}
-                                        title={`Arrows per click: ${this.state.inputNumber}`}
+                                    <button
+                                        className={`mode-btn ${this.state.deleting ? 'erasing' : ''}`}
+                                        onClick={() => this.setState({ deleting: true })}
+                                        title="Erase / Remove mode (E)"
                                     >
-                                        <span className="count-num">×{this.state.inputNumber}</span>
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20h8.94l7.44-7.44c.79-.78.79-2.04 0-2.83l-4.86-4.86c-.39-.39-.9-.59-1.41-.59zM6.1 18l-1.66-1.66 5.48-5.48 1.66 1.66L6.1 18z" fill="currentColor"/></svg>
+                                        <span>Erase</span>
                                     </button>
                                 </div>
-                                {/* Eraser toggle */}
-                                <div className="tool-row">
-                                <button 
-                                    className={`tool-btn ${!this.state.deleting && this.state.drawMode === 'arrow' ? 'active' : ''}`}
-                                    onClick={() => this.setState({ deleting: false, drawMode: 'arrow' })}
-                                    title="Draw arrows (E)"
-                                >
-                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
-                                    <span>Pen</span>
-                                </button>
-                                <button 
-                                    className={`tool-btn ${this.state.drawMode === 'wall' ? 'active' : ''}`}
-                                    onClick={() => this.setState({ deleting: false, drawMode: 'wall' })}
-                                    title="Draw/remove walls (W)"
-                                >
-                                    <svg viewBox="0 0 24 24" width="16" height="16">
-                                        <rect x="2" y="3" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
-                                        <rect x="2" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
-                                        <rect x="13" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
-                                        <rect x="2" y="17" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
-                                    </svg>
-                                    <span>Wall</span>
-                                </button>
-                                <button 
-                                    className={`tool-btn ${this.state.deleting ? 'erasing' : ''}`}
-                                    onClick={this.changeEditMode}
-                                    title="Erase arrows (E)"
-                                >
-                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20h8.94l7.44-7.44c.79-.78.79-2.04 0-2.83l-4.86-4.86c-.39-.39-.9-.59-1.41-.59zM6.1 18l-1.66-1.66 5.48-5.48 1.66 1.66L6.1 18z" fill="currentColor"/></svg>
-                                </button>
+
+                                {/* ── Arrow Tool Row ── */}
+                                <div className={`draw-tool-section ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'arrow' ? 'active-section' : 'inactive-section'}`}>
+                                    <button
+                                        className={`section-header-btn ${!this.state.deleting && this.state.drawMode === 'arrow' ? 'active' : ''}`}
+                                        onClick={() => this.setState({ drawMode: 'arrow', deleting: false })}
+                                        title="Arrow tool"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="12" height="12"><polygon points="12,2 22,20 2,20" fill="currentColor"/></svg>
+                                        <span>Arrows</span>
+                                    </button>
+                                    <div className="tool-row">
+                                        <button
+                                            className="tool-btn"
+                                            onClick={() => this.newInputDirection((this.state.inputDirection + 1) % 4)}
+                                            title={`Direction: ${dirLabels[this.state.inputDirection]} (click to rotate)`}
+                                        >
+                                            <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg}deg)`, transition: 'transform 0.2s ease'}}>
+                                                <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" fill="currentColor"/>
+                                            </svg>
+                                        </button>
+                                        <button
+                                            className="tool-btn"
+                                            onClick={() => this.setState({inputNumber: ((this.state.inputNumber) % 4) + 1})}
+                                            title={`Arrows per click: ${this.state.inputNumber}`}
+                                        >
+                                            <span className="count-num">×{this.state.inputNumber}</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* ── Wall Tool Row ── */}
+                                <div className={`draw-tool-section ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'wall' ? 'active-section' : 'inactive-section'}`}>
+                                    <button
+                                        className={`section-header-btn ${!this.state.deleting && this.state.drawMode === 'wall' ? 'active' : ''}`}
+                                        onClick={() => this.setState({ drawMode: 'wall', deleting: false })}
+                                        title="Wall tool (W)"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="12" height="12">
+                                            <rect x="2" y="3" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
+                                            <rect x="2" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
+                                            <rect x="13" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
+                                            <rect x="2" y="17" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
+                                        </svg>
+                                        <span>Walls</span>
+                                    </button>
+                                    <div className="wall-sides-grid">
+                                        {['top','bottom','left','right'].map(side => (
+                                            <button
+                                                key={side}
+                                                className={`wall-side-btn ${side} ${this.state.wallSides.has(side) ? 'active' : ''}`}
+                                                onClick={() => {
+                                                    const next = new Set(this.state.wallSides);
+                                                    if (next.has(side)) next.delete(side);
+                                                    else next.add(side);
+                                                    this.setState({ drawMode: 'wall', wallSides: next, wallClosest: false });
+                                                }}
+                                                title={`${side.charAt(0).toUpperCase() + side.slice(1)} wall`}
+                                            >
+                                                {side === 'top' && <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="3" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>}
+                                                {side === 'bottom' && <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="18" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>}
+                                                {side === 'left' && <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="3" width="3" height="18" rx="1" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>}
+                                                {side === 'right' && <svg viewBox="0 0 24 24" width="14" height="14"><rect x="18" y="3" width="3" height="18" rx="1" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>}
+                                            </button>
+                                        ))}
+                                        <button
+                                            className={`wall-side-btn closest wide ${this.state.wallClosest ? 'active' : ''}`}
+                                            onClick={() => this.setState({ drawMode: 'wall', wallClosest: true, wallSides: new Set() })}
+                                            title="Add wall to closest edge"
+                                        >
+                                            <svg viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                                            <span>Closest</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -584,6 +687,13 @@ export class Application extends React.Component {
                             <select id="midiOut" className="sel">
                                 <option value="">None</option>
                             </select>
+                            <button
+                                className="midi-rescan-btn"
+                                onClick={rescanMIDI}
+                                title="Rescan MIDI devices"
+                            >
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
+                            </button>
                         </div>
                     </footer>
                 </div>

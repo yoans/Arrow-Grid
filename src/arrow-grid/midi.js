@@ -83,3 +83,5 @@ export const midiUtils = () => {
         // console.log('MIDI is not supported by your browser access ');
     }
 };
+
+export const rescanMIDI = midiUtils;

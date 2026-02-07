@@ -287,6 +287,173 @@ body {
 }
 .tool-row .tool-btn { flex:1; }
 
+/* Draw mode toggle (Draw / Erase) — pill-shaped segmented control */
+.draw-mode-toggle {
+  display: flex;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+.draw-mode-toggle .mode-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.7em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.draw-mode-toggle .mode-btn:first-child {
+  border-right: 1px solid var(--border-subtle);
+}
+.draw-mode-toggle .mode-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.draw-mode-toggle .mode-btn.active {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+.draw-mode-toggle .mode-btn.erasing {
+  color: var(--danger);
+  background: rgba(248,113,113,0.1);
+}
+
+/* Draw type selector (Arrow / Wall) */
+.draw-type-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.draw-type-row .type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 36px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: 0.7em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.draw-type-row .type-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.draw-type-row .type-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Draw Tool Sections (Arrow / Wall subsections) ── */
+.draw-tool-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.draw-tool-section.inactive-section > *:not(.section-header-btn) {
+  opacity: 0.3;
+  filter: saturate(0);
+  pointer-events: none;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+.draw-tool-section.inactive-section:hover > *:not(.section-header-btn) {
+  opacity: 0.45;
+  filter: saturate(0.2);
+}
+.draw-tool-section.active-section {
+  opacity: 1;
+  filter: none;
+}
+
+.section-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  height: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 0.65em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.section-header-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+.section-header-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Wall sides 2×2 grid + full-width "closest" */
+.wall-sides-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  width: 100%;
+}
+.wall-side-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-size: 0.65em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.wall-side-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+.wall-side-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wall-side-btn.wide {
+  grid-column: 1 / -1;
+}
+
+/* Draw panel extra spacing */
+.draw-panel {
+  gap: 8px;
+}
+
 .count-num {
   font-size: 1.1em;
   font-weight: 700;
@@ -334,6 +501,22 @@ body {
   transition: border-color 0.15s;
 }
 .sel:hover, .sel:focus { border-color: var(--accent); }
+
+.midi-rescan-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  padding: 4px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.midi-rescan-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-purple);
+}
 
 /* ===================================
    INTRO MODAL
