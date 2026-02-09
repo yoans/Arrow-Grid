@@ -96,7 +96,7 @@ const isInBounds = (arrow, size) => {
 /**
  * Clone an arrow object
  */
-const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector });
+const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector, sound: arrow.sound });
 
 /**
  * Generate a unique ID (simple counter-based for performance)
@@ -144,7 +144,7 @@ const MAX_ARROWS = 4000;
 /**
  * Add arrows to grid with symmetry support
  */
-export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
+export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arrowSound) => {
     if (grid.arrows.length > MAX_ARROWS) return grid;
     
     // Check for duplicate
@@ -157,7 +157,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
     
     // Add base arrows
     for (let i = 0; i < inputNumber; i++) {
-        toAdd.push({ x, y, vector: dir });
+        toAdd.push({ x, y, vector: dir, sound: arrowSound || null });
     }
     
     // Apply symmetries
@@ -171,7 +171,8 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
             toAdd.push({
                 x: a.x,
                 y: getMirror(a.y, grid.size),
-                vector: [2, 1, 0, 3][a.vector]
+                vector: [2, 1, 0, 3][a.vector],
+                sound: a.sound
             });
         }
     }
@@ -183,7 +184,8 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
             toAdd.push({
                 x: getMirror(a.x, grid.size),
                 y: a.y,
-                vector: [0, 3, 2, 1][a.vector]
+                vector: [0, 3, 2, 1][a.vector],
+                sound: a.sound
             });
         }
     }
@@ -195,7 +197,8 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
             toAdd.push({
                 x: a.y,
                 y: a.x,
-                vector: [3, 2, 1, 0][a.vector]
+                vector: [3, 2, 1, 0][a.vector],
+                sound: a.sound
             });
         }
     }
@@ -207,7 +210,8 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced) => {
             toAdd.push({
                 x: getMirror(a.y, grid.size),
                 y: getMirror(a.x, grid.size),
-                vector: [1, 0, 3, 2][a.vector]
+                vector: [1, 0, 3, 2][a.vector],
+                sound: a.sound
             });
         }
     }
@@ -281,7 +285,7 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
     const walls = grid.walls || [];
     const wallSet = walls.length > 0 ? new Set(walls) : null;
     
-    // Step 1: Group by position+vector and reduce (mod 4)
+    // Step 1: Group by position+vector+sound and reduce (mod 4)
     vectorMap.clear();
     
     for (let i = 0; i < arrowCount; i++) {
@@ -290,28 +294,26 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
         if (arrow.x < 0 || arrow.y < 0 || arrow.x >= size || arrow.y >= size) continue;
         
         const hash = arrowHash(arrow.x, arrow.y, arrow.vector);
-        const existing = vectorMap.get(hash);
+        const key = hash * 4 + (arrow.sound === 'sine' ? 1 : arrow.sound === 'square' ? 2 : arrow.sound === 'sawtooth' ? 3 : 0);
+        const existing = vectorMap.get(key);
         if (existing === undefined) {
-            vectorMap.set(hash, 1);
+            vectorMap.set(key, { count: 1, sound: arrow.sound || null, x: arrow.x, y: arrow.y, vector: arrow.vector });
         } else {
-            vectorMap.set(hash, existing + 1);
+            existing.count++;
         }
     }
     
     // Step 2: Build reduced arrows array (keep count % 4, or 4 if divisible)
     let reducedCount = 0;
     
-    for (const [hash, count] of vectorMap) {
-        const keep = count % 4 || 4;
-        const x = (hash >> 16) & 0xFF;
-        const y = (hash >> 8) & 0xFF;
-        const vector = hash & 0xFF;
+    for (const [, entry] of vectorMap) {
+        const keep = entry.count % 4 || 4;
         
         for (let j = 0; j < keep; j++) {
             if (reducedCount >= arrowBuffer1.length) {
                 arrowBuffer1.length = arrowBuffer1.length * 2;
             }
-            arrowBuffer1[reducedCount++] = { x, y, vector };
+            arrowBuffer1[reducedCount++] = { x: entry.x, y: entry.y, vector: entry.vector, sound: entry.sound };
         }
     }
     
@@ -341,7 +343,8 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
             arrowBuffer2[rotatedCount++] = {
                 x: arrow.x,
                 y: arrow.y,
-                vector: (arrow.vector + rotateBy) & 3
+                vector: (arrow.vector + rotateBy) & 3,
+                sound: arrow.sound
             };
         }
     }

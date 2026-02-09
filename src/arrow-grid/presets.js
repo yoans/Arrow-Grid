@@ -1,6 +1,11 @@
 export default [
   {
     size: 8,
+    arrows: [],
+    muted: true
+  },
+  {
+    size: 8,
     arrows: [
       { x: 0, y: 0, vector: 0 },
       { x: 1, y: 1, vector: 0 },

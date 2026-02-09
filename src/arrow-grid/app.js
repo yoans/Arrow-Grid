@@ -83,6 +83,7 @@ export class Application extends React.Component {
             inputNumber: 1,
             scale: scales[0].value,
             musicalKey: 60,
+            arrowSound: null,  // null (silent) | 'sine' | 'square' | 'sawtooth'
 
             gridStep: 0,
             showCollisions: true
@@ -235,16 +236,25 @@ export class Application extends React.Component {
         this.setState({ deleting: !this.state.deleting });
     }
     toggleWall = (wallKey) => {
-        const walls = this.state.grid.walls || [];
-        const idx = walls.indexOf(wallKey);
-        const newWalls = idx >= 0
-            ? walls.filter((_, i) => i !== idx)
-            : [...walls, wallKey];
-        // Invalidate cached Set so boundary checks rebuild it
-        newWalls._set = undefined;
-        this.setState({
-            grid: { ...this.state.grid, walls: newWalls }
-        });
+        // When called from 'closest' mode, convert wallKey to cell+side and use addWallAtCell for symmetry
+        const parts = wallKey.split(':');
+        const type = parts[0];
+        const wy = parseInt(parts[1]);
+        const wx = parseInt(parts[2]);
+        // h:y:x = horizontal wall on bottom edge of cell (wx, wy) = top edge of cell (wx, wy+1)
+        // v:y:x = vertical wall on right edge of cell (wx, wy) = left edge of cell (wx+1, wy)
+        // Pick the cell+side interpretation that makes sense
+        let cellX, cellY, side;
+        if (type === 'h') {
+            cellX = wx;
+            cellY = wy;
+            side = 'bottom';
+        } else {
+            cellX = wx;
+            cellY = wy;
+            side = 'right';
+        }
+        this.addWallAtCell(cellX, cellY, new Set([side]));
     }
     removeWall = (wallKey) => {
         const walls = this.state.grid.walls || [];
@@ -330,28 +340,101 @@ export class Application extends React.Component {
     addWallAtCell = (x, y, sideOrSides) => {
         const size = this.state.grid.size;
         const sides = sideOrSides instanceof Set ? sideOrSides : new Set([sideOrSides]);
-        // Collect all wall keys first, then toggle them in a single setState
-        const wallKeys = [];
-        for (const side of sides) {
-            let wallKey = null;
-            switch (side) {
-                case 'top':
-                    if (y > 0) wallKey = `h:${y - 1}:${x}`;
-                    break;
-                case 'bottom':
-                    if (y < size - 1) wallKey = `h:${y}:${x}`;
-                    break;
-                case 'left':
-                    if (x > 0) wallKey = `v:${y}:${x - 1}`;
-                    break;
-                case 'right':
-                    if (x < size - 1) wallKey = `v:${y}:${x}`;
-                    break;
-                default:
-                    break;
+
+        // Mirror helper (same as getMirror in arrows-logic-optimized)
+        const mirror = (pos) => {
+            const half = Math.floor(size / 2);
+            const offset = half - pos;
+            let location = half + offset;
+            if ((size % 2) === 0) location--;
+            return location;
+        };
+
+        // Side flip maps matching arrow vector symmetry transforms
+        const flipH   = { top: 'bottom', bottom: 'top', left: 'left',  right: 'right' };
+        const flipV   = { top: 'top',    bottom: 'bottom', left: 'right', right: 'left' };
+        const flipBD  = { top: 'left',   bottom: 'right',  left: 'top',   right: 'bottom' };
+        const flipFD  = { top: 'right',  bottom: 'left',   left: 'bottom', right: 'top' };
+
+        // Build list of {x, y, sides} placements starting with the original
+        let placements = [{ x, y, sides: [...sides] }];
+
+        const { horizontalSymmetry, verticalSymmetry, backwardDiagonalSymmetry, forwardDiagonalSymmetry } = this.state;
+        const skipForth = horizontalSymmetry && verticalSymmetry && backwardDiagonalSymmetry;
+
+        if (horizontalSymmetry) {
+            const len = placements.length;
+            for (let i = 0; i < len; i++) {
+                const p = placements[i];
+                placements.push({
+                    x: p.x,
+                    y: mirror(p.y),
+                    sides: p.sides.map(s => flipH[s])
+                });
             }
-            if (wallKey) wallKeys.push(wallKey);
         }
+
+        if (verticalSymmetry) {
+            const len = placements.length;
+            for (let i = 0; i < len; i++) {
+                const p = placements[i];
+                placements.push({
+                    x: mirror(p.x),
+                    y: p.y,
+                    sides: p.sides.map(s => flipV[s])
+                });
+            }
+        }
+
+        if (backwardDiagonalSymmetry) {
+            const len = placements.length;
+            for (let i = 0; i < len; i++) {
+                const p = placements[i];
+                placements.push({
+                    x: p.y,
+                    y: p.x,
+                    sides: p.sides.map(s => flipBD[s])
+                });
+            }
+        }
+
+        if (forwardDiagonalSymmetry && !skipForth) {
+            const len = placements.length;
+            for (let i = 0; i < len; i++) {
+                const p = placements[i];
+                placements.push({
+                    x: mirror(p.y),
+                    y: mirror(p.x),
+                    sides: p.sides.map(s => flipFD[s])
+                });
+            }
+        }
+
+        // Convert all placements to wall keys
+        const wallKeys = [];
+        for (const p of placements) {
+            for (const side of p.sides) {
+                let wallKey = null;
+                switch (side) {
+                    case 'top':
+                        if (p.y > 0) wallKey = `h:${p.y - 1}:${p.x}`;
+                        break;
+                    case 'bottom':
+                        if (p.y < size - 1) wallKey = `h:${p.y}:${p.x}`;
+                        break;
+                    case 'left':
+                        if (p.x > 0) wallKey = `v:${p.y}:${p.x - 1}`;
+                        break;
+                    case 'right':
+                        if (p.x < size - 1) wallKey = `v:${p.y}:${p.x}`;
+                        break;
+                    default:
+                        break;
+                }
+                if (wallKey && !wallKeys.includes(wallKey)) wallKeys.push(wallKey);
+            }
+        }
+
         if (wallKeys.length === 0) return;
         let walls = [...(this.state.grid.walls || [])];
         for (const key of wallKeys) {
@@ -387,7 +470,8 @@ export class Application extends React.Component {
                     this.state.inputDirection,
                     symmetries,
                     this.state.inputNumber,
-                    forced
+                    forced,
+                    this.state.arrowSound
                 )
             });
         }
@@ -487,6 +571,7 @@ export class Application extends React.Component {
                                     onChange={(e) => this.newNoteLength(e.target.value)}
                                     title="Animation Speed"
                                 />
+                                <span className="slider-val">{Math.round(60000 / this.state.noteLength)} bpm</span>
                             </div>
 
                             {/* Grid Size */}
@@ -504,15 +589,24 @@ export class Application extends React.Component {
                                 <span className="slider-val">{this.state.grid.size}×{this.state.grid.size}</span>
                             </div>
 
-                            {/* Collision FX toggle */}
-                            <button
-                                className={`tool-btn wide ${this.state.showCollisions ? 'active' : ''}`}
-                                onClick={() => this.setState({ showCollisions: !this.state.showCollisions })}
-                                title="Toggle collision effects"
-                            >
-                                <svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".5"/><circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1" opacity=".25"/></svg>
-                                <span>FX</span>
-                            </button>
+                            {/* Sound type radio buttons */}
+                            <div className="sound-type-row">
+                                {[
+                                    { id: null,        label: 'Silent', colorClass: 'neon-blue' },
+                                    { id: 'sine',      label: 'Smooth', colorClass: 'neon-purple' },
+                                    { id: 'square',    label: 'Chiptune', colorClass: 'neon-green' },
+                                    { id: 'sawtooth',  label: 'Buzz', colorClass: 'neon-orange' },
+                                ].map(st => (
+                                    <button
+                                        key={st.id || 'silent'}
+                                        className={`sound-type-btn ${st.colorClass} ${this.state.arrowSound === st.id ? 'active' : ''}`}
+                                        onClick={() => this.setState({ arrowSound: st.id })}
+                                        title={`${st.label}${st.id ? ` (${st.id})` : ''}`}
+                                    >
+                                        {st.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* ── CENTER CANVAS ── */}
@@ -545,51 +639,66 @@ export class Application extends React.Component {
                                     </button>
                                 </div>
 
-                                {/* ── Arrow Tool Row ── */}
-                                <div className={`draw-tool-section ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'arrow' ? 'active-section' : 'inactive-section'}`}>
-                                    <button
-                                        className={`section-header-btn ${!this.state.deleting && this.state.drawMode === 'arrow' ? 'active' : ''}`}
-                                        onClick={() => this.setState({ drawMode: 'arrow', deleting: false })}
-                                        title="Arrow tool"
-                                    >
-                                        <svg viewBox="0 0 24 24" width="12" height="12"><polygon points="12,2 22,20 2,20" fill="currentColor"/></svg>
-                                        <span>Arrows</span>
-                                    </button>
+                                {/* ── Arrow Tool Group ── */}
+                                <div className={`draw-tool-group ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'arrow' ? 'active-section' : 'inactive-section'}`}
+                                     onClick={() => this.setState({ drawMode: 'arrow', deleting: false })}
+                                >
+                                    <span className="group-label">Arrow</span>
                                     <div className="tool-row">
-                                        <button
-                                            className="tool-btn"
-                                            onClick={() => this.newInputDirection((this.state.inputDirection + 1) % 4)}
-                                            title={`Direction: ${dirLabels[this.state.inputDirection]} (click to rotate)`}
-                                        >
-                                            <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg}deg)`, transition: 'transform 0.2s ease'}}>
-                                                <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" fill="currentColor"/>
-                                            </svg>
+                                        <div className="tool-btn-labeled">
+                                            <span className="tool-label">direction</span>
+                                            <button
+                                                className="tool-btn"
+                                                onClick={() => this.newInputDirection((this.state.inputDirection + 1) % 4)}
+                                                title={`Direction: ${dirLabels[this.state.inputDirection]} (click to rotate)`}
+                                            >
+                                                <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg}deg)`, transition: 'transform 0.2s ease'}}>
+                                                    <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" fill="currentColor"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div className="tool-btn-labeled">
+                                            <span className="tool-label">path</span>
+                                            <button
+                                                className="tool-btn"
+                                                onClick={() => this.setState({inputNumber: ((this.state.inputNumber) % 4) + 1, drawMode: 'arrow', deleting: false})}
+                                                title={['Straight path','Always turn right','Back and forth','Always turn left'][this.state.inputNumber - 1] + ` (×${this.state.inputNumber})`}
+                                            >
+                                            {this.state.inputNumber === 1 && (
+                                                <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg + 90}deg)`, transition: 'transform 0.2s ease'}}>
+                                                    <path d="M12 20 L12 4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/>
+                                                    <path d="M8 8 L12 4 L16 8" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            )}
+                                            {this.state.inputNumber === 2 && (
+                                                <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg + 90}deg)`, transition: 'transform 0.2s ease'}}>
+                                                    <path d="M8 20 L8 8 Q8 4 12 4 Q16 4 16 8 L16 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    <path d="M13 13 L16 16 L19 13" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            )}
+                                            {this.state.inputNumber === 3 && (
+                                                <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg + 90}deg)`, transition: 'transform 0.2s ease'}}>
+                                                    <path d="M12 4 L12 20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round"/>
+                                                    <path d="M8 8 L12 4 L16 8" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    <path d="M8 16 L12 20 L16 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            )}
+                                            {this.state.inputNumber === 4 && (
+                                                <svg viewBox="0 0 24 24" width="18" height="18" style={{transform: `rotate(${arrowRotationDeg + 90}deg)`, transition: 'transform 0.2s ease'}}>
+                                                    <path d="M16 20 L16 8 Q16 4 12 4 Q8 4 8 8 L8 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                    <path d="M5 13 L8 16 L11 13" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                            )}
                                         </button>
-                                        <button
-                                            className="tool-btn"
-                                            onClick={() => this.setState({inputNumber: ((this.state.inputNumber) % 4) + 1})}
-                                            title={`Arrows per click: ${this.state.inputNumber}`}
-                                        >
-                                            <span className="count-num">×{this.state.inputNumber}</span>
-                                        </button>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* ── Wall Tool Row ── */}
-                                <div className={`draw-tool-section ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'wall' ? 'active-section' : 'inactive-section'}`}>
-                                    <button
-                                        className={`section-header-btn ${!this.state.deleting && this.state.drawMode === 'wall' ? 'active' : ''}`}
-                                        onClick={() => this.setState({ drawMode: 'wall', deleting: false })}
-                                        title="Wall tool (W)"
-                                    >
-                                        <svg viewBox="0 0 24 24" width="12" height="12">
-                                            <rect x="2" y="3" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
-                                            <rect x="2" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
-                                            <rect x="13" y="10" width="9" height="4" rx="1" fill="currentColor" opacity=".5"/>
-                                            <rect x="2" y="17" width="20" height="4" rx="1" fill="currentColor" opacity=".7"/>
-                                        </svg>
-                                        <span>Walls</span>
-                                    </button>
+                                {/* ── Wall Tool Group ── */}
+                                <div className={`draw-tool-group ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'wall' ? 'active-section' : 'inactive-section'}`}
+                                     onClick={() => this.setState({ drawMode: 'wall', deleting: false })}
+                                >
+                                    <span className="group-label">Wall</span>
                                     <div className="wall-sides-grid">
                                         {['top','bottom','left','right'].map(side => (
                                             <button
@@ -599,7 +708,7 @@ export class Application extends React.Component {
                                                     const next = new Set(this.state.wallSides);
                                                     if (next.has(side)) next.delete(side);
                                                     else next.add(side);
-                                                    this.setState({ drawMode: 'wall', wallSides: next, wallClosest: false });
+                                                    this.setState({ drawMode: 'wall', deleting: false, wallSides: next, wallClosest: false });
                                                 }}
                                                 title={`${side.charAt(0).toUpperCase() + side.slice(1)} wall`}
                                             >
@@ -611,7 +720,7 @@ export class Application extends React.Component {
                                         ))}
                                         <button
                                             className={`wall-side-btn closest wide ${this.state.wallClosest ? 'active' : ''}`}
-                                            onClick={() => this.setState({ drawMode: 'wall', wallClosest: true, wallSides: new Set() })}
+                                            onClick={() => this.setState({ drawMode: 'wall', deleting: false, wallClosest: true, wallSides: new Set() })}
                                             title="Add wall to closest edge"
                                         >
                                             <svg viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>

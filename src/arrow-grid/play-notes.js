@@ -25,11 +25,13 @@ const getIndex = (x, y, size, vector) => {
 
 let audioInitialized = false;
 let audioInitPending = null;
-let synth = null;
+const synths = {};  // One PolySynth per oscillator type
 let filter = null;
 let reverb = null;
 let compressor = null;
 let limiter = null;
+
+const OSCILLATOR_TYPES = ['sine', 'square', 'sawtooth'];
 
 // Initialize audio on first user interaction (required by browsers)
 async function initAudio() {
@@ -73,28 +75,29 @@ async function initAudio() {
         Q: 1
     }).connect(reverb);
     
-    // PolySynth for multiple simultaneous notes
-    // With 4000 max arrows, we need more voices - 64 handles most cases
-    synth = new Tone.PolySynth(Tone.Synth, {
-        maxPolyphony: 64,
-        voice: Tone.Synth,
-        options: {
-            oscillator: {
-                type: 'sine',
-                partials: [1, 0.5, 0.25, 0.125] // Warm harmonic content
-            },
-            envelope: {
-                attack: 0.02,   // 20ms attack prevents clicks
-                decay: 0.1,
-                sustain: 0.3,
-                release: 0.3    // Slightly shorter release to free voices faster
-            },
-            volume: -18        // More headroom for more voices
-        }
-    }).connect(filter);
+    // Create a separate PolySynth for each oscillator type
+    for (const oscType of OSCILLATOR_TYPES) {
+        synths[oscType] = new Tone.PolySynth(Tone.Synth, {
+            maxPolyphony: 32,
+            voice: Tone.Synth,
+            options: {
+                oscillator: {
+                    type: oscType,
+                    ...(oscType === 'sine' ? { partials: [1, 0.5, 0.25, 0.125] } : {})
+                },
+                envelope: {
+                    attack: 0.02,
+                    decay: 0.1,
+                    sustain: 0.3,
+                    release: 0.3
+                },
+                volume: -18
+            }
+        }).connect(filter);
+    }
     
     audioInitialized = true;
-    console.log('Audio engine initialized');
+    console.log('Audio engine initialized (3 synths)');
     })();
     return audioInitPending;
 }
@@ -112,11 +115,14 @@ export const makePizzaSound = (index, length, scale, musicalKey) => {
 };
 
 // Play sounds for arrows that hit boundaries
+// Each arrow carries its own .sound property ('sine', 'square', 'sawtooth', or null)
+// null = blue/silent arrows — they make no sound
 export const playSounds = async (boundaryArrows, size, length, muted, scale, musicalKey) => {
     try {
     // When muted, only send MIDI (no audio init needed)
     if (muted) {
         boundaryArrows.forEach((arrow) => {
+            if (!arrow.sound) return; // silent arrows skip MIDI too
             const noteToPlay = getIndex(arrow.x, arrow.y, size, arrow.vector);
             makeMIDImessage(musicalKey + scale[noteToPlay % scale.length], length).play();
         });
@@ -128,38 +134,44 @@ export const playSounds = async (boundaryArrows, size, length, muted, scale, mus
         await initAudio();
     }
     
-    if (!synth) return;
-    
-    // Collect unique notes to play (avoid duplicates)
-    const notesToPlay = new Map();
-    
+    if (Object.keys(synths).length === 0) return;
+
+    // Group arrows by sound type, skip null/silent (blue) arrows
+    const soundGroups = new Map();
     boundaryArrows.forEach((arrow) => {
-        const noteIndex = getIndex(arrow.x, arrow.y, size, arrow.vector);
-        if (!notesToPlay.has(noteIndex)) {
-            const noteName = getNoteName(noteIndex, scale, musicalKey);
-            notesToPlay.set(noteIndex, noteName);
-            
-            // Send MIDI message
-            makeMIDImessage(musicalKey + scale[noteIndex % scale.length], length).play();
-        }
+        if (!arrow.sound) return; // blue arrows are silent
+        const sType = arrow.sound;
+        if (!soundGroups.has(sType)) soundGroups.set(sType, []);
+        soundGroups.get(sType).push(arrow);
     });
-    
-    // Play all notes with Tone.js
-    if (notesToPlay.size > 0) {
-        const notes = Array.from(notesToPlay.values());
-        const durationSec = Math.max(length / 1000, 0.05); // Min 50ms, convert to seconds
-        
-        // Adjust velocity based on number of simultaneous notes to prevent clipping
-        const velocity = Math.min(0.7, 0.9 / Math.sqrt(notesToPlay.size));
-        
-        // Schedule slightly in the future to avoid audio glitches
-        const now = Tone.now() + 0.01;
-        
-        notes.forEach((note, i) => {
-            // Slight spread to make notes more organic
-            const offset = i * 0.002;
-            synth.triggerAttackRelease(note, durationSec, now + offset, velocity);
+
+    const durationSec = Math.max(length / 1000, 0.05);
+    const now = Tone.now() + 0.01;
+
+    // Play each sound group on its own dedicated synth — true harmony
+    for (const [sType, arrows] of soundGroups) {
+        const s = synths[sType];
+        if (!s) continue;
+
+        // Collect unique notes for this group
+        const notesToPlay = new Map();
+        arrows.forEach((arrow) => {
+            const noteIndex = getIndex(arrow.x, arrow.y, size, arrow.vector);
+            if (!notesToPlay.has(noteIndex)) {
+                const noteName = getNoteName(noteIndex, scale, musicalKey);
+                notesToPlay.set(noteIndex, noteName);
+                makeMIDImessage(musicalKey + scale[noteIndex % scale.length], length).play();
+            }
         });
+
+        if (notesToPlay.size > 0) {
+            const notes = Array.from(notesToPlay.values());
+            const velocity = Math.min(0.7, 0.9 / Math.sqrt(notesToPlay.size));
+            notes.forEach((note, i) => {
+                const offset = i * 0.002;
+                s.triggerAttackRelease(note, durationSec, now + offset, velocity);
+            });
+        }
     }
     } catch (e) {
         // Swallow audio errors — don't let them become unhandled rejections
@@ -169,7 +181,10 @@ export const playSounds = async (boundaryArrows, size, length, muted, scale, mus
 
 // Cleanup function to dispose of audio resources
 export const disposeAudio = () => {
-    if (synth) { synth.dispose(); synth = null; }
+    for (const key of Object.keys(synths)) {
+        synths[key].dispose();
+        delete synths[key];
+    }
     if (filter) { filter.dispose(); filter = null; }
     if (reverb) { reverb.dispose(); reverb = null; }
     if (compressor) { compressor.dispose(); compressor = null; }

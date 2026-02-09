@@ -11,10 +11,15 @@ import {
 let stateDrawing;
 let previousTime;
 
+// Elastic pause: when paused, arrows decelerate to rest instead of snapping
+let pauseEaseFrom = 0;     // percentage captured at moment of pause
+let pauseEaseStart = 0;    // timestamp when pause happened
+const PAUSE_EASE_MS = 180; // duration of deceleration (ms)
+
 // Collision burst particles
 let particles = [];
 let lastBurstStep = -1;
-const spawnBurst = (cx, cy, cellSz) => {
+const spawnBurst = (cx, cy, cellSz, sound) => {
     const count = 8;
     for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
@@ -25,7 +30,8 @@ const spawnBurst = (cx, cy, cellSz) => {
             vy: Math.sin(angle) * speed,
             life: 1.0,
             decay: 0.02 + Math.random() * 0.02,
-            size: cellSz * (0.15 + Math.random() * 0.2)
+            size: cellSz * (0.15 + Math.random() * 0.2),
+            sound: sound || null
         });
     }
 };
@@ -44,7 +50,41 @@ const gridCanvasSize = 320;
 const gridCanvasBorderSize = 2;
 
 // Theme colors
-const arrowColor = [102, 126, 234, 200]; // Accent Purple
+const defaultArrowColor = [102, 126, 234, 200]; // Default blue
+const wallColor = [102, 126, 234, 220]; // Walls always accent blue
+const soundColors = {
+    sine:     [180, 100, 255, 200], // Neon purple
+    square:   [57, 255, 120, 200],  // Neon green
+    sawtooth: [255, 160, 40, 200],  // Neon orange
+};
+const soundPreviewColors = {
+    sine:     [180, 100, 255, 60],
+    square:   [57, 255, 120, 60],
+    sawtooth: [255, 160, 40, 60],
+};
+const soundParticleColors = {
+    sine:     [180, 100, 255],
+    square:   [57, 255, 120],
+    sawtooth: [255, 160, 40],
+};
+const getArrowColor = (sound) => {
+    if (sound && soundColors[sound]) {
+        return soundColors[sound];
+    }
+    return defaultArrowColor;
+};
+const getPreviewColor = () => {
+    if (stateDrawing && stateDrawing.arrowSound && soundPreviewColors[stateDrawing.arrowSound]) {
+        return soundPreviewColors[stateDrawing.arrowSound];
+    }
+    return [102, 126, 234, 60];
+};
+const getParticleColor = (sound) => {
+    if (sound && soundParticleColors[sound]) {
+        return soundParticleColors[sound];
+    }
+    return [102, 126, 234];
+};
 const convertPixelToIndex = pixel => Math.floor(
     (pixel - gridCanvasBorderSize) / cellSize
 );
@@ -352,73 +392,160 @@ export const setUpCanvas = (state) => {
                 const hoverCellX = convertPixelToIndex(mouseX);
                 const hoverCellY = convertPixelToIndex(mouseY);
                 const inBounds = hoverCellX >= 0 && hoverCellX < stateDrawing.grid.size && hoverCellY >= 0 && hoverCellY < stateDrawing.grid.size;
+                const sz = stateDrawing.grid.size;
+
+                // Symmetry mirror helper
+                const mirrorPos = (pos) => {
+                    const half = Math.floor(sz / 2);
+                    const offset = half - pos;
+                    let loc = half + offset;
+                    if ((sz % 2) === 0) loc--;
+                    return loc;
+                };
+
+                // Compute all symmetry-mirrored placements of {x, y, dir/sides}
+                const getSymmetricPlacements = (ox, oy, data, flipMaps) => {
+                    // data is either { dir } for arrows or { sides } for walls
+                    let placements = [{ x: ox, y: oy, ...data }];
+                    const hs = stateDrawing.horizontalSymmetry;
+                    const vs = stateDrawing.verticalSymmetry;
+                    const bd = stateDrawing.backwardDiagonalSymmetry;
+                    const fd = stateDrawing.forwardDiagonalSymmetry;
+                    const skipForth = hs && vs && bd;
+
+                    if (hs) {
+                        const len = placements.length;
+                        for (let i = 0; i < len; i++) {
+                            const p = placements[i];
+                            placements.push({ x: p.x, y: mirrorPos(p.y), ...(flipMaps.h(p)) });
+                        }
+                    }
+                    if (vs) {
+                        const len = placements.length;
+                        for (let i = 0; i < len; i++) {
+                            const p = placements[i];
+                            placements.push({ x: mirrorPos(p.x), y: p.y, ...(flipMaps.v(p)) });
+                        }
+                    }
+                    if (bd) {
+                        const len = placements.length;
+                        for (let i = 0; i < len; i++) {
+                            const p = placements[i];
+                            placements.push({ x: p.y, y: p.x, ...(flipMaps.bd(p)) });
+                        }
+                    }
+                    if (fd && !skipForth) {
+                        const len = placements.length;
+                        for (let i = 0; i < len; i++) {
+                            const p = placements[i];
+                            placements.push({ x: mirrorPos(p.y), y: mirrorPos(p.x), ...(flipMaps.fd(p)) });
+                        }
+                    }
+                    return placements;
+                };
+
+                // Helper to draw a wall line for a given cell+side
+                const drawWallPreviewLine = (cx, cy, side) => {
+                    if (side === 'top' && cy > 0) {
+                        const px = gridCanvasBorderSize + cx * cellSize;
+                        const py = gridCanvasBorderSize + cy * cellSize;
+                        sketch.line(px, py, px + cellSize, py);
+                    }
+                    if (side === 'bottom' && cy < sz - 1) {
+                        const px = gridCanvasBorderSize + cx * cellSize;
+                        const py = gridCanvasBorderSize + (cy + 1) * cellSize;
+                        sketch.line(px, py, px + cellSize, py);
+                    }
+                    if (side === 'left' && cx > 0) {
+                        const px = gridCanvasBorderSize + cx * cellSize;
+                        const py = gridCanvasBorderSize + cy * cellSize;
+                        sketch.line(px, py, px, py + cellSize);
+                    }
+                    if (side === 'right' && cx < sz - 1) {
+                        const px = gridCanvasBorderSize + (cx + 1) * cellSize;
+                        const py = gridCanvasBorderSize + cy * cellSize;
+                        sketch.line(px, py, px, py + cellSize);
+                    }
+                };
 
                 if (stateDrawing.drawMode === 'wall') {
+                    const flipH  = { top:'bottom', bottom:'top', left:'left',  right:'right' };
+                    const flipV  = { top:'top',    bottom:'bottom', left:'right', right:'left' };
+                    const flipBD = { top:'left',   bottom:'right',  left:'top',   right:'bottom' };
+                    const flipFD = { top:'right',  bottom:'left',   left:'bottom', right:'top' };
+                    const wallFlips = {
+                        h:  (p) => ({ sides: p.sides.map(s => flipH[s]) }),
+                        v:  (p) => ({ sides: p.sides.map(s => flipV[s]) }),
+                        bd: (p) => ({ sides: p.sides.map(s => flipBD[s]) }),
+                        fd: (p) => ({ sides: p.sides.map(s => flipFD[s]) }),
+                    };
+
                     if (!stateDrawing.wallClosest && stateDrawing.wallSides && stateDrawing.wallSides.size > 0 && inBounds) {
-                        // Preview selected wall sides on hovered cell
+                        const baseSides = [...stateDrawing.wallSides];
+                        const placements = getSymmetricPlacements(hoverCellX, hoverCellY, { sides: baseSides }, wallFlips);
                         sketch.push();
                         sketch.stroke(102, 126, 234, 80);
                         sketch.strokeWeight(gridCanvasBorderSize * 1.5);
                         sketch.strokeCap(sketch.SQUARE);
-                        const cx = hoverCellX;
-                        const cy = hoverCellY;
-                        const sz = stateDrawing.grid.size;
-                        if (stateDrawing.wallSides.has('top') && cy > 0) {
-                            const px = gridCanvasBorderSize + cx * cellSize;
-                            const py = gridCanvasBorderSize + cy * cellSize;
-                            sketch.line(px, py, px + cellSize, py);
-                        }
-                        if (stateDrawing.wallSides.has('bottom') && cy < sz - 1) {
-                            const px = gridCanvasBorderSize + cx * cellSize;
-                            const py = gridCanvasBorderSize + (cy + 1) * cellSize;
-                            sketch.line(px, py, px + cellSize, py);
-                        }
-                        if (stateDrawing.wallSides.has('left') && cx > 0) {
-                            const px = gridCanvasBorderSize + cx * cellSize;
-                            const py = gridCanvasBorderSize + cy * cellSize;
-                            sketch.line(px, py, px, py + cellSize);
-                        }
-                        if (stateDrawing.wallSides.has('right') && cx < sz - 1) {
-                            const px = gridCanvasBorderSize + (cx + 1) * cellSize;
-                            const py = gridCanvasBorderSize + cy * cellSize;
-                            sketch.line(px, py, px, py + cellSize);
+                        for (const p of placements) {
+                            if (p.x >= 0 && p.x < sz && p.y >= 0 && p.y < sz) {
+                                for (const side of p.sides) {
+                                    drawWallPreviewLine(p.x, p.y, side);
+                                }
+                            }
                         }
                         sketch.pop();
                     } else {
-                        // Closest mode: preview nearest edge
+                        // Closest mode: preview nearest edge + symmetry mirrors
                         const previewKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
                         if (previewKey) {
-                            sketch.push();
-                            sketch.stroke(102, 126, 234, 80);
-                            sketch.strokeWeight(gridCanvasBorderSize * 1.5);
-                            sketch.strokeCap(sketch.SQUARE);
                             const parts = previewKey.split(':');
                             const type = parts[0];
                             const wy = parseInt(parts[1]);
                             const wx = parseInt(parts[2]);
-                            if (type === 'h') {
-                                const px = gridCanvasBorderSize + wx * cellSize;
-                                const py = gridCanvasBorderSize + (wy + 1) * cellSize;
-                                sketch.line(px, py, px + cellSize, py);
-                            } else {
-                                const px = gridCanvasBorderSize + (wx + 1) * cellSize;
-                                const py = gridCanvasBorderSize + wy * cellSize;
-                                sketch.line(px, py, px, py + cellSize);
+                            // Convert to cell+side
+                            let baseSide;
+                            let baseCX = wx, baseCY = wy;
+                            if (type === 'h') { baseSide = 'bottom'; }
+                            else { baseSide = 'right'; }
+                            const placements = getSymmetricPlacements(baseCX, baseCY, { sides: [baseSide] }, wallFlips);
+                            sketch.push();
+                            sketch.stroke(102, 126, 234, 80);
+                            sketch.strokeWeight(gridCanvasBorderSize * 1.5);
+                            sketch.strokeCap(sketch.SQUARE);
+                            for (const p of placements) {
+                                if (p.x >= 0 && p.x < sz && p.y >= 0 && p.y < sz) {
+                                    for (const side of p.sides) {
+                                        drawWallPreviewLine(p.x, p.y, side);
+                                    }
+                                }
                             }
                             sketch.pop();
                         }
                     }
                 } else if (stateDrawing.drawMode === 'arrow' && inBounds) {
-                    // Arrow mode: show ghost arrow preview on hovered cell
-                    sketch.push();
-                    sketch.strokeWeight(0);
-                    sketch.fill(102, 126, 234, 60);
-                    const topLeft = {
-                        x: gridCanvasBorderSize + hoverCellX * cellSize,
-                        y: gridCanvasBorderSize + hoverCellY * cellSize
+                    // Arrow mode: show ghost arrow preview with symmetry
+                    // Vector maps: 0=up, 1=right, 2=down, 3=left
+                    const arrowFlips = {
+                        h:  (p) => ({ dir: [2, 1, 0, 3][p.dir] }),
+                        v:  (p) => ({ dir: [0, 3, 2, 1][p.dir] }),
+                        bd: (p) => ({ dir: [3, 2, 1, 0][p.dir] }),
+                        fd: (p) => ({ dir: [1, 0, 3, 2][p.dir] }),
                     };
                     const dir = stateDrawing.inputDirection;
-                    triangleDrawingArray[dir](topLeft, cellSize, sketch);
+                    const placements = getSymmetricPlacements(hoverCellX, hoverCellY, { dir }, arrowFlips);
+                    sketch.push();
+                    sketch.strokeWeight(0);
+                    sketch.fill(...getPreviewColor());
+                    for (const p of placements) {
+                        if (p.x >= 0 && p.x < sz && p.y >= 0 && p.y < sz) {
+                            const topLeft = {
+                                x: gridCanvasBorderSize + p.x * cellSize,
+                                y: gridCanvasBorderSize + p.y * cellSize
+                            };
+                            triangleDrawingArray[p.dir](topLeft, cellSize, sketch);
+                        }
+                    }
                     sketch.pop();
                 }
             }
@@ -431,12 +558,21 @@ export const setUpCanvas = (state) => {
                 }
             );
             const timeDiff = new Date().getTime() - previousTime.getTime();
-            const possiblePercentage = ((
-                stateDrawing.playing ? timeDiff : 0
-            ) / (
-                1.0 * stateDrawing.noteLength
-            ));
-            const percentage = possiblePercentage > 1 ? 1 : possiblePercentage;
+            let percentage;
+            if (stateDrawing.playing) {
+                const possiblePercentage = timeDiff / (1.0 * stateDrawing.noteLength);
+                percentage = Math.min(possiblePercentage, 1);
+            } else if (pauseEaseFrom > 0) {
+                // Elastic ease-out: decelerate from paused position to rest
+                const elapsed = new Date().getTime() - pauseEaseStart;
+                const t = Math.min(elapsed / PAUSE_EASE_MS, 1);
+                // Cubic ease-out for natural inertia feel
+                const ease = 1 - Math.pow(1 - t, 3);
+                percentage = pauseEaseFrom * (1 - ease);
+                if (t >= 1) pauseEaseFrom = 0;
+            } else {
+                percentage = 0;
+            }
             const boundaryDictionary = getArrowBoundaryDictionary(
                 stateDrawing.grid.arrows || [],
                 stateDrawing.grid.size,
@@ -463,7 +599,7 @@ export const setUpCanvas = (state) => {
                     if (arrow.vector === 2) by = convertIndexToPixel(arrow.y) + cellSize; // bottom wall
                     if (arrow.vector === 3) bx = convertIndexToPixel(arrow.x);          // left wall
                     if (arrow.vector === 1) bx = convertIndexToPixel(arrow.x) + cellSize; // right wall
-                    spawnBurst(bx, by, cellSize);
+                    spawnBurst(bx, by, cellSize, arrow.sound);
                 });
                 }
             }
@@ -483,7 +619,8 @@ export const setUpCanvas = (state) => {
                 sketch.push();
                 sketch.noStroke();
                 const alpha = p.life * 180;
-                sketch.fill(102, 126, 234, alpha);
+                const pc = getParticleColor(p.sound);
+                sketch.fill(pc[0], pc[1], pc[2], alpha);
                 sketch.ellipse(p.x, p.y, p.size * p.life, p.size * p.life);
                 sketch.pop();
             }
@@ -518,7 +655,7 @@ export const setUpCanvas = (state) => {
             (arrowDictionary[NO_BOUNDARY] || []).map((arrow) => {
                 sketch.push();
                 sketch.strokeWeight(0);
-                sketch.fill(...arrowColor);
+                sketch.fill(...getArrowColor(arrow.sound));
                 const shiftedTopLeft = timeShift(
                     convertArrowToTopLeft(arrow),
                     arrow.vector,
@@ -533,7 +670,7 @@ export const setUpCanvas = (state) => {
             (arrowDictionary[BOUNDARY] || []).map((arrow) => {
                 sketch.push();
                 sketch.strokeWeight(0);
-                sketch.fill(...arrowColor);
+                sketch.fill(...getArrowColor(arrow.sound));
                 const topLeft = convertArrowToTopLeft(arrow);
                 translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                 sketch.quad(
@@ -579,7 +716,7 @@ export const setUpCanvas = (state) => {
                     
                     sketch.push();
                     sketch.strokeWeight(0);
-                    sketch.fill(...arrowColor);
+                    sketch.fill(...getArrowColor(arrow.sound));
                     translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                     
                     triangleRotatingArray[rotations](cellSize, sketch, percentage);
@@ -596,7 +733,7 @@ export const setUpCanvas = (state) => {
 
                     sketch.push();
                     sketch.strokeWeight(0);
-                    sketch.fill(...arrowColor);
+                    sketch.fill(...getArrowColor(arrow.sound));
                     translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                     triangleRotatingArray[bouncedRotation](cellSize, sketch, percentage);
 
@@ -653,11 +790,20 @@ export const updateCanvas = (state, date) => {
     if (gridStepped || presetChanged) {
         // Reset animation cycle on actual grid steps or preset switches
         previousTime = date;
+        pauseEaseFrom = 0;
+    }
+
+    if (playStateChanged && !state.playing) {
+        // Just paused — capture current animation progress for elastic ease-out
+        const elapsed = date.getTime() - previousTime.getTime();
+        pauseEaseFrom = Math.min(Math.max(elapsed / stateDrawing.noteLength, 0), 1);
+        pauseEaseStart = date.getTime();
     }
 
     if (playStateChanged && state.playing) {
         // Starting playback — begin animation from 0%
         previousTime = date;
+        pauseEaseFrom = 0;
     }
 
     // Always sync so size, arrows, direction, and other changes propagate immediately
