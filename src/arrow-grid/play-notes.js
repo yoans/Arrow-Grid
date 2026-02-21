@@ -20,23 +20,20 @@ const getIndex = (x, y, size, vector) => {
 };
 
 // ============================================
-// AUDIO ENGINE - Tone.js with proper gain staging
+// AUDIO ENGINE - Tone.js with single synth for all channels
 // ============================================
 
 let audioInitialized = false;
 let audioInitPending = null;
-const synths = {};  // One PolySynth per oscillator type
+let synth = null;  // Single PolySynth for all browser audio
 let filter = null;
 let reverb = null;
 let compressor = null;
 let limiter = null;
 
-const OSCILLATOR_TYPES = ['sine', 'square', 'sawtooth'];
-
 // Initialize audio on first user interaction (required by browsers)
 async function initAudio() {
     if (audioInitialized) return;
-    // Prevent multiple concurrent init attempts
     if (audioInitPending) return audioInitPending;
     
     audioInitPending = (async () => {
@@ -45,7 +42,7 @@ async function initAudio() {
         } catch (e) {
             console.warn('Tone.start() failed (no user gesture yet):', e.message);
             audioInitPending = null;
-            return; // bail out — will retry on next call
+            return;
         }
     
     // Limiter at the end to prevent ANY clipping (-1dB ceiling)
@@ -75,29 +72,27 @@ async function initAudio() {
         Q: 1
     }).connect(reverb);
     
-    // Create a separate PolySynth for each oscillator type
-    for (const oscType of OSCILLATOR_TYPES) {
-        synths[oscType] = new Tone.PolySynth(Tone.Synth, {
-            maxPolyphony: 32,
-            voice: Tone.Synth,
-            options: {
-                oscillator: {
-                    type: oscType,
-                    ...(oscType === 'sine' ? { partials: [1, 0.5, 0.25, 0.125] } : {})
-                },
-                envelope: {
-                    attack: 0.02,
-                    decay: 0.1,
-                    sustain: 0.3,
-                    release: 0.3
-                },
-                volume: -18
-            }
-        }).connect(filter);
-    }
+    // Single synth for all browser-generated sound
+    synth = new Tone.PolySynth(Tone.Synth, {
+        maxPolyphony: 32,
+        voice: Tone.Synth,
+        options: {
+            oscillator: {
+                type: 'sine',
+                partials: [1, 0.5, 0.25, 0.125]
+            },
+            envelope: {
+                attack: 0.02,
+                decay: 0.1,
+                sustain: 0.3,
+                release: 0.3
+            },
+            volume: -18
+        }
+    }).connect(filter);
     
     audioInitialized = true;
-    console.log('Audio engine initialized (3 synths)');
+    console.log('Audio engine initialized (single synth)');
     })();
     return audioInitPending;
 }
@@ -110,81 +105,83 @@ function getNoteName(noteIndex, scale, musicalKey) {
 }
 
 export const makePizzaSound = (index, length, scale, musicalKey) => {
-    // Return a simple object for compatibility
     return { noteIndex: index, length, scale, musicalKey };
 };
 
 // Play sounds for arrows that hit boundaries
-// Each arrow carries its own .sound property ('sine', 'square', 'sawtooth', or null)
-// null = blue/silent arrows — they make no sound
-export const playSounds = async (boundaryArrows, size, length, muted, scale, musicalKey) => {
+// Each arrow carries a .channel property (1-7 = channel number)
+// Muted channels make no sound. Otherwise play browser sound and/or send MIDI.
+// channelSettings: { [channelId]: { volume, noteLength, midiChannel, muted } }
+export const playSounds = async (boundaryArrows, size, length, soundOn, midiOn, scale, musicalKey, globalVelocity, channelSettings) => {
+    const gVel = globalVelocity ?? 1.0;
+    const chSettings = channelSettings || {};
     try {
-    // When muted, only send MIDI (no audio init needed)
-    if (muted) {
+    // Send MIDI messages if MIDI is enabled — each arrow on its own MIDI channel
+    if (midiOn) {
         boundaryArrows.forEach((arrow) => {
-            if (!arrow.sound) return; // silent arrows skip MIDI too
+            const ch = arrow.channel ?? 1;
+            const settings = chSettings[ch] || {};
+            if (settings.muted) return; // muted channel
+            const midiChannel = settings.midiChannel || ch;
+            const chVolume = settings.volume ?? 1.0;
+            const chNoteLength = arrow.noteLength || settings.noteLength || length;
             const noteToPlay = getIndex(arrow.x, arrow.y, size, arrow.vector);
-            makeMIDImessage(musicalKey + scale[noteToPlay % scale.length], length).play();
+            const vel = (arrow.velocity ?? 1.0) * gVel * chVolume;
+            makeMIDImessage(
+                musicalKey + scale[noteToPlay % scale.length],
+                chNoteLength,
+                vel,
+                midiChannel
+            ).play();
         });
-        return;
     }
+
+    // Skip audio if sound is off
+    if (!soundOn) return;
     
-    // Initialize audio on first unmuted play
+    // Initialize audio on first play
     if (!audioInitialized) {
         await initAudio();
     }
     
-    if (Object.keys(synths).length === 0) return;
+    if (!synth) return;
 
-    // Group arrows by sound type, skip null/silent (blue) arrows
-    const soundGroups = new Map();
+    // Collect all non-muted arrows for browser audio
+    const notesToPlay = new Map();
     boundaryArrows.forEach((arrow) => {
-        if (!arrow.sound) return; // blue arrows are silent
-        const sType = arrow.sound;
-        if (!soundGroups.has(sType)) soundGroups.set(sType, []);
-        soundGroups.get(sType).push(arrow);
+        const ch = arrow.channel ?? 1;
+        const settings = chSettings[ch] || {};
+        if (settings.muted) return; // muted channel makes no sound
+        const chVolume = settings.volume ?? 1.0;
+        const chNoteLength = arrow.noteLength || settings.noteLength || length;
+        const noteIndex = getIndex(arrow.x, arrow.y, size, arrow.vector);
+        const key = `${noteIndex}-${chNoteLength}`;
+        if (!notesToPlay.has(key)) {
+            const noteName = getNoteName(noteIndex, scale, musicalKey);
+            const vel = (arrow.velocity ?? 1.0) * gVel * chVolume;
+            notesToPlay.set(key, { noteName, velocity: vel, duration: chNoteLength });
+        }
     });
 
-    const durationSec = Math.max(length / 1000, 0.05);
-    const now = Tone.now() + 0.01;
-
-    // Play each sound group on its own dedicated synth — true harmony
-    for (const [sType, arrows] of soundGroups) {
-        const s = synths[sType];
-        if (!s) continue;
-
-        // Collect unique notes for this group
-        const notesToPlay = new Map();
-        arrows.forEach((arrow) => {
-            const noteIndex = getIndex(arrow.x, arrow.y, size, arrow.vector);
-            if (!notesToPlay.has(noteIndex)) {
-                const noteName = getNoteName(noteIndex, scale, musicalKey);
-                notesToPlay.set(noteIndex, noteName);
-                makeMIDImessage(musicalKey + scale[noteIndex % scale.length], length).play();
-            }
+    if (notesToPlay.size > 0) {
+        const durationSec = Math.max(length / 1000, 0.05);
+        const now = Tone.now() + 0.01;
+        const entries = Array.from(notesToPlay.values());
+        entries.forEach((entry, i) => {
+            const velocity = Math.min(0.7, entry.velocity * 0.9 / Math.sqrt(notesToPlay.size));
+            const dur = Math.max(entry.duration / 1000, 0.05);
+            const offset = i * 0.002;
+            synth.triggerAttackRelease(entry.noteName, dur, now + offset, velocity);
         });
-
-        if (notesToPlay.size > 0) {
-            const notes = Array.from(notesToPlay.values());
-            const velocity = Math.min(0.7, 0.9 / Math.sqrt(notesToPlay.size));
-            notes.forEach((note, i) => {
-                const offset = i * 0.002;
-                s.triggerAttackRelease(note, durationSec, now + offset, velocity);
-            });
-        }
     }
     } catch (e) {
-        // Swallow audio errors — don't let them become unhandled rejections
         console.warn('playSounds error:', e.message);
     }
 };
 
 // Cleanup function to dispose of audio resources
 export const disposeAudio = () => {
-    for (const key of Object.keys(synths)) {
-        synths[key].dispose();
-        delete synths[key];
-    }
+    if (synth) { synth.dispose(); synth = null; }
     if (filter) { filter.dispose(); filter = null; }
     if (reverb) { reverb.dispose(); reverb = null; }
     if (compressor) { compressor.dispose(); compressor = null; }

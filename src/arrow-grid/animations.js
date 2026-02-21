@@ -19,7 +19,7 @@ const PAUSE_EASE_MS = 180; // duration of deceleration (ms)
 // Collision burst particles
 let particles = [];
 let lastBurstStep = -1;
-const spawnBurst = (cx, cy, cellSz, sound) => {
+const spawnBurst = (cx, cy, cellSz, channel) => {
     const count = 8;
     for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
@@ -31,7 +31,7 @@ const spawnBurst = (cx, cy, cellSz, sound) => {
             life: 1.0,
             decay: 0.02 + Math.random() * 0.02,
             size: cellSz * (0.15 + Math.random() * 0.2),
-            sound: sound || null
+            channel: channel ?? 0
         });
     }
 };
@@ -46,44 +46,36 @@ let thisWallToggler = () => {};
 let thisWallPlacer = () => {};
 let thisWallRemover = () => {};
 let mouseIsPressed;
-const gridCanvasSize = 320;
+let gridCanvasSize = 320;
 const gridCanvasBorderSize = 2;
+let sketchInstance = null;
 
-// Theme colors
-const defaultArrowColor = [102, 126, 234, 200]; // Default blue
+// Theme colors — channel-based
+import { getChannelColor, getChannelPreviewColor, getChannelParticleColor } from './channels';
+
 const wallColor = [102, 126, 234, 220]; // Walls always accent blue
-const soundColors = {
-    sine:     [180, 100, 255, 200], // Neon purple
-    square:   [57, 255, 120, 200],  // Neon green
-    sawtooth: [255, 160, 40, 200],  // Neon orange
+
+// Map arrow.noteLength (ms) to a visual "fill fraction" 0.0–1.0
+// Short notes (32nd = 63ms) → small inner mark, long notes → full fill
+const NOTE_LENGTH_MIN = 63;
+const NOTE_LENGTH_MAX = 4000;
+const getNoteLengthFraction = (noteLengthMs) => {
+    if (!noteLengthMs) return 0.5; // default for arrows without noteLength
+    const clamped = Math.max(NOTE_LENGTH_MIN, Math.min(NOTE_LENGTH_MAX, noteLengthMs));
+    return Math.log(clamped / NOTE_LENGTH_MIN) / Math.log(NOTE_LENGTH_MAX / NOTE_LENGTH_MIN);
 };
-const soundPreviewColors = {
-    sine:     [180, 100, 255, 60],
-    square:   [57, 255, 120, 60],
-    sawtooth: [255, 160, 40, 60],
-};
-const soundParticleColors = {
-    sine:     [180, 100, 255],
-    square:   [57, 255, 120],
-    sawtooth: [255, 160, 40],
-};
-const getArrowColor = (sound) => {
-    if (sound && soundColors[sound]) {
-        return soundColors[sound];
-    }
-    return defaultArrowColor;
+
+const getArrowColor = (channel, velocity) => {
+    return getChannelColor(channel, velocity);
 };
 const getPreviewColor = () => {
-    if (stateDrawing && stateDrawing.arrowSound && soundPreviewColors[stateDrawing.arrowSound]) {
-        return soundPreviewColors[stateDrawing.arrowSound];
+    if (stateDrawing && stateDrawing.arrowChannel) {
+        return getChannelPreviewColor(stateDrawing.arrowChannel);
     }
-    return [102, 126, 234, 60];
+    return getChannelPreviewColor(1);
 };
-const getParticleColor = (sound) => {
-    if (sound && soundParticleColors[sound]) {
-        return soundParticleColors[sound];
-    }
-    return [102, 126, 234];
+const getParticleColor = (channel) => {
+    return getChannelParticleColor(channel);
 };
 const convertPixelToIndex = pixel => Math.floor(
     (pixel - gridCanvasBorderSize) / cellSize
@@ -220,6 +212,7 @@ export const setUpCanvas = (state) => {
     };
 
     const drawingContext = (sketch) => {
+        sketchInstance = sketch;
         // Persistent state across frames (must NOT be inside sketch.draw)
         let lastClickTime = 0;
         let lastDragWall = null;
@@ -599,7 +592,7 @@ export const setUpCanvas = (state) => {
                     if (arrow.vector === 2) by = convertIndexToPixel(arrow.y) + cellSize; // bottom wall
                     if (arrow.vector === 3) bx = convertIndexToPixel(arrow.x);          // left wall
                     if (arrow.vector === 1) bx = convertIndexToPixel(arrow.x) + cellSize; // right wall
-                    spawnBurst(bx, by, cellSize, arrow.sound);
+                    spawnBurst(bx, by, cellSize, arrow.channel);
                 });
                 }
             }
@@ -619,7 +612,7 @@ export const setUpCanvas = (state) => {
                 sketch.push();
                 sketch.noStroke();
                 const alpha = p.life * 180;
-                const pc = getParticleColor(p.sound);
+                const pc = getParticleColor(p.channel);
                 sketch.fill(pc[0], pc[1], pc[2], alpha);
                 sketch.ellipse(p.x, p.y, p.size * p.life, p.size * p.life);
                 sketch.pop();
@@ -655,7 +648,7 @@ export const setUpCanvas = (state) => {
             (arrowDictionary[NO_BOUNDARY] || []).map((arrow) => {
                 sketch.push();
                 sketch.strokeWeight(0);
-                sketch.fill(...getArrowColor(arrow.sound));
+                sketch.fill(...getArrowColor(arrow.channel, arrow.velocity));
                 const shiftedTopLeft = timeShift(
                     convertArrowToTopLeft(arrow),
                     arrow.vector,
@@ -670,7 +663,7 @@ export const setUpCanvas = (state) => {
             (arrowDictionary[BOUNDARY] || []).map((arrow) => {
                 sketch.push();
                 sketch.strokeWeight(0);
-                sketch.fill(...getArrowColor(arrow.sound));
+                sketch.fill(...getArrowColor(arrow.channel, arrow.velocity));
                 const topLeft = convertArrowToTopLeft(arrow);
                 translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                 sketch.quad(
@@ -716,7 +709,7 @@ export const setUpCanvas = (state) => {
                     
                     sketch.push();
                     sketch.strokeWeight(0);
-                    sketch.fill(...getArrowColor(arrow.sound));
+                    sketch.fill(...getArrowColor(arrow.channel, arrow.velocity));
                     translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                     
                     triangleRotatingArray[rotations](cellSize, sketch, percentage);
@@ -733,7 +726,7 @@ export const setUpCanvas = (state) => {
 
                     sketch.push();
                     sketch.strokeWeight(0);
-                    sketch.fill(...getArrowColor(arrow.sound));
+                    sketch.fill(...getArrowColor(arrow.channel, arrow.velocity));
                     translateAndRotate(topLeft, sketch, arrow.vector, cellSize);
                     triangleRotatingArray[bouncedRotation](cellSize, sketch, percentage);
 
@@ -769,6 +762,18 @@ export const setUpCanvas = (state) => {
     // eslint-disable-next-line
     new p5(drawingContext);
 };
+export const resizeGridCanvas = (newSize) => {
+    gridCanvasSize = newSize;
+    if (sketchInstance) {
+        sketchInstance.resizeCanvas(
+            gridCanvasSize + gridCanvasBorderSize * 2,
+            gridCanvasSize + gridCanvasBorderSize * 2
+        );
+    }
+};
+
+export const getGridCanvasSize = () => gridCanvasSize;
+
 export const updateCanvas = (state, date) => {
     // Guard against being called before setUpCanvas
     if (!stateDrawing) {

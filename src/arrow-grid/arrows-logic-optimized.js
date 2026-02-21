@@ -96,7 +96,7 @@ const isInBounds = (arrow, size) => {
 /**
  * Clone an arrow object
  */
-const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector, sound: arrow.sound });
+const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector, channel: arrow.channel ?? 1, velocity: arrow.velocity ?? 1.0, noteLength: arrow.noteLength ?? 500 });
 
 /**
  * Generate a unique ID (simple counter-based for performance)
@@ -144,7 +144,7 @@ const MAX_ARROWS = 4000;
 /**
  * Add arrows to grid with symmetry support
  */
-export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arrowSound) => {
+export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arrowChannel, arrowVelocity, arrowNoteLength) => {
     if (grid.arrows.length > MAX_ARROWS) return grid;
     
     // Check for duplicate
@@ -157,7 +157,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
     
     // Add base arrows
     for (let i = 0; i < inputNumber; i++) {
-        toAdd.push({ x, y, vector: dir, sound: arrowSound || null });
+        toAdd.push({ x, y, vector: dir, channel: arrowChannel ?? 1, velocity: arrowVelocity ?? 1.0, noteLength: arrowNoteLength ?? 500 });
     }
     
     // Apply symmetries
@@ -172,7 +172,9 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 x: a.x,
                 y: getMirror(a.y, grid.size),
                 vector: [2, 1, 0, 3][a.vector],
-                sound: a.sound
+                channel: a.channel,
+                velocity: a.velocity,
+                noteLength: a.noteLength
             });
         }
     }
@@ -185,7 +187,9 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 x: getMirror(a.x, grid.size),
                 y: a.y,
                 vector: [0, 3, 2, 1][a.vector],
-                sound: a.sound
+                channel: a.channel,
+                velocity: a.velocity,
+                noteLength: a.noteLength
             });
         }
     }
@@ -198,7 +202,9 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 x: a.y,
                 y: a.x,
                 vector: [3, 2, 1, 0][a.vector],
-                sound: a.sound
+                channel: a.channel,
+                velocity: a.velocity,
+                noteLength: a.noteLength
             });
         }
     }
@@ -211,7 +217,9 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 x: getMirror(a.y, grid.size),
                 y: getMirror(a.x, grid.size),
                 vector: [1, 0, 3, 2][a.vector],
-                sound: a.sound
+                channel: a.channel,
+                velocity: a.velocity,
+                noteLength: a.noteLength
             });
         }
     }
@@ -273,7 +281,7 @@ export const getArrowBoundaryDictionary = (arrows, size, keyFunc, rotations, wal
  * OPTIMIZED: Compute next grid state
  * This is the hot path - heavily optimized for performance
  */
-export const nextGrid = (grid, length, scale, musicalKey) => {
+export const nextGrid = (grid, length, scale, musicalKey, globalVelocity, channelSettings) => {
     const { size, arrows } = grid;
     const arrowCount = arrows.length;
     
@@ -294,10 +302,11 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
         if (arrow.x < 0 || arrow.y < 0 || arrow.x >= size || arrow.y >= size) continue;
         
         const hash = arrowHash(arrow.x, arrow.y, arrow.vector);
-        const key = hash * 4 + (arrow.sound === 'sine' ? 1 : arrow.sound === 'square' ? 2 : arrow.sound === 'sawtooth' ? 3 : 0);
+        const ch = arrow.channel ?? 1;
+        const key = hash * 8 + ch;  // 8 possible channels (0-7)
         const existing = vectorMap.get(key);
         if (existing === undefined) {
-            vectorMap.set(key, { count: 1, sound: arrow.sound || null, x: arrow.x, y: arrow.y, vector: arrow.vector });
+            vectorMap.set(key, { count: 1, channel: ch, x: arrow.x, y: arrow.y, vector: arrow.vector, velocity: arrow.velocity ?? 1.0 });
         } else {
             existing.count++;
         }
@@ -313,7 +322,7 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
             if (reducedCount >= arrowBuffer1.length) {
                 arrowBuffer1.length = arrowBuffer1.length * 2;
             }
-            arrowBuffer1[reducedCount++] = { x: entry.x, y: entry.y, vector: entry.vector, sound: entry.sound };
+            arrowBuffer1[reducedCount++] = { x: entry.x, y: entry.y, vector: entry.vector, channel: entry.channel, velocity: entry.velocity ?? 1.0 };
         }
     }
     
@@ -344,7 +353,8 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
                 x: arrow.x,
                 y: arrow.y,
                 vector: (arrow.vector + rotateBy) & 3,
-                sound: arrow.sound
+                channel: arrow.channel,
+                velocity: arrow.velocity ?? 1.0
             };
         }
     }
@@ -375,7 +385,7 @@ export const nextGrid = (grid, length, scale, musicalKey) => {
     }
     
     // Play sounds
-    playSounds(soundArrows, size, length, grid.muted, scale, musicalKey);
+    playSounds(soundArrows, size, length, grid.soundOn, grid.midiOn, scale, musicalKey, globalVelocity, channelSettings);
     
     return {
         ...grid,

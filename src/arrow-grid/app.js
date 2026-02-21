@@ -18,13 +18,16 @@ import {
     getAdderWithMousePosition,
     setWallToggler,
     setWallPlacer,
-    setWallRemover
+    setWallRemover,
+    resizeGridCanvas,
+    getGridCanvasSize
 } from './animations';
 import {setSliderOnChange} from './sliders';
-import { rescanMIDI } from './midi';
+import { rescanMIDI, midiUtils, onMidiConnected } from './midi';
 import presets from './presets';
 import Chance from 'chance';
 import scales from './scales';
+import { CHANNEL_LABELS, CHANNEL_CSS_CLASSES, CHANNEL_COLORS, MAX_CHANNELS, createChannelSettings } from './channels';
 
 const chance = new Chance();
 
@@ -32,6 +35,18 @@ const maxSize = 20;
 const minSize = 2;
 const minNoteLength = -500;
 const maxNoteLength = -50;
+
+// Note length table: musical note values as beat fractions
+// Actual ms is computed from BPM: ms = (beats * 60000) / bpm
+const NOTE_LENGTH_TABLE = [
+    { beats: 0.125, label: '32nd' },
+    { beats: 0.25,  label: '16th' },
+    { beats: 0.5,   label: '8th' },
+    { beats: 1,     label: 'Quarter' },
+    { beats: 2,     label: 'Half' },
+    { beats: 4,     label: 'Whole' },
+];
+// Count-based entries (2ct through grid size) will be generated dynamically
 
 // Simple click sound using Tone.js
 let clickSynth = null;
@@ -68,9 +83,11 @@ export class Application extends React.Component {
             presets,
             inputDirection: 0,
             noteLength: props.noteLength || 350,
+            arrowNoteLength: 3,  // index into NOTE_LENGTH_TABLE (default: Quarter)
             grid: presets[0] || newGrid(8, 6),  // Start with first preset
             playing: false,
-            muted: true,
+            soundOn: false,
+            midiOn: false,
             deleting: false,
             drawMode: 'arrow',  // 'arrow' or 'wall'
             wallSides: new Set(),  // multi-select: 'top','bottom','left','right'
@@ -83,7 +100,19 @@ export class Application extends React.Component {
             inputNumber: 1,
             scale: scales[0].value,
             musicalKey: 60,
-            arrowSound: null,  // null (silent) | 'sine' | 'square' | 'sawtooth'
+            arrowChannel: 1,   // 1-7 = channel number
+            activeChannels: MAX_CHANNELS,  // all channels always visible
+            channelSettings: {  // per-channel settings
+                1: createChannelSettings(1),
+                2: createChannelSettings(2),
+                3: createChannelSettings(3),
+                4: createChannelSettings(4),
+                5: createChannelSettings(5),
+                6: createChannelSettings(6),
+                7: createChannelSettings(7),
+            },
+            inputVelocity: 1.0,  // 0.0–1.0 per-arrow velocity
+            globalVelocity: 1.0, // 0.0–1.0 master velocity multiplier
 
             gridStep: 0,
             showCollisions: true
@@ -91,6 +120,9 @@ export class Application extends React.Component {
     }
 
     componentDidMount() {
+        // Compute initial canvas size before setup
+        this._computeCanvasSize();
+
         // Set up canvas after component is mounted (DOM is ready)
         setUpCanvas(this.state);
         
@@ -107,13 +139,58 @@ export class Application extends React.Component {
         // Add keyboard shortcuts
         document.addEventListener('keydown', this.handleKeyDown);
         
+        // Add resize listener for responsive canvas
+        window.addEventListener('resize', this._handleResize);
+        
+        // Initialize MIDI on startup
+        midiUtils();
+        
+        // Auto-enable MIDI when a device is connected
+        onMidiConnected(() => {
+            this.setState({ midiOn: true, soundOn: true });
+        });
+        
         // Auto-play after a short delay to show users what the app does
         setTimeout(() => this.play(), 500);
     }
     
     componentWillUnmount() {
         document.removeEventListener('keydown', this.handleKeyDown);
+        window.removeEventListener('resize', this._handleResize);
         clearTimeout(this._timerID);
+        clearTimeout(this._resizeTimer);
+    }
+
+    _resizeTimer = null;
+
+    _computeCanvasSize = () => {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const isPortrait = vh > vw || vw <= 860;
+
+        let canvasSize;
+        if (isPortrait) {
+            // Portrait: canvas width = viewport width minus padding/margins
+            const padding = 40; // wrapper padding + borders
+            canvasSize = Math.min(vw - padding, vh * 0.6);
+        } else {
+            // Landscape: canvas height = viewport height minus header/footer/padding
+            const chrome = 220; // header + footer + gaps + wrapper padding
+            const sidePanelWidth = 130 * 2 + 40 + 48; // both panels + gaps + wrapper padding
+            canvasSize = Math.min(vh - chrome, vw - sidePanelWidth);
+        }
+
+        // Clamp to reasonable range
+        canvasSize = Math.max(200, Math.min(Math.floor(canvasSize), 800));
+        resizeGridCanvas(canvasSize);
+    }
+
+    _handleResize = () => {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => {
+            this._computeCanvasSize();
+            this.forceUpdate();
+        }, 100);
     }
     
     handleKeyDown = (e) => {
@@ -221,16 +298,18 @@ export class Application extends React.Component {
         this.setState({ playing: false });
     }
     muteToggle = async () => {
-        const willUnmute = this.state.muted;
-        // If unmuting, start audio context now (we're in a user gesture)
-        if (willUnmute) {
+        const willEnable = !this.state.soundOn;
+        if (willEnable) {
             try {
                 await Tone.start();
             } catch (e) { /* ignore */ }
         }
-        this.setState({ muted: !this.state.muted }, () => {
-            if (!this.state.muted) sound.play();
+        this.setState({ soundOn: willEnable }, () => {
+            if (this.state.soundOn) sound.play();
         });
+    }
+    midiToggle = () => {
+        this.setState({ midiOn: !this.state.midiOn });
     }
     changeEditMode = () => {
         this.setState({ deleting: !this.state.deleting });
@@ -291,16 +370,57 @@ export class Application extends React.Component {
             noteLength: -1 * input,
         }, () => this._scheduleNextTick());
     }
+
+    _getNoteLengthSteps = () => {
+        const gridSize = this.state.grid?.size || 8;
+        const steps = [...NOTE_LENGTH_TABLE];
+        // Add count-based entries: 2ct through gridSize-ct
+        for (let c = 2; c <= gridSize; c++) {
+            steps.push({ beats: 4 * c, label: `${c}ct` });
+        }
+        return steps;
+    }
+
+    _getArrowNoteLengthDisplay = () => {
+        const steps = this._getNoteLengthSteps();
+        const idx = Math.min(this.state.arrowNoteLength, steps.length - 1);
+        return steps[idx]?.label || 'Quarter';
+    }
+
+    _getArrowNoteLengthMs = () => {
+        const steps = this._getNoteLengthSteps();
+        const idx = Math.min(this.state.arrowNoteLength, steps.length - 1);
+        const beats = steps[idx]?.beats || 1;
+        const bpm = Math.round(60000 / this.state.noteLength);
+        return Math.round((beats * 60000) / bpm);
+    }
+
+    prevNoteLength = () => {
+        if (this.state.arrowNoteLength > 0) {
+            this.setState({ arrowNoteLength: this.state.arrowNoteLength - 1 });
+        }
+    }
+
+    nextNoteLength = () => {
+        const steps = this._getNoteLengthSteps();
+        if (this.state.arrowNoteLength < steps.length - 1) {
+            this.setState({ arrowNoteLength: this.state.arrowNoteLength + 1 });
+        }
+    }
+
     nextGrid = (length) => {
         this.setState({
             grid: nextGridLogic({
                 ...this.state.grid,
                 id: chance.guid(),
-                muted: this.state.muted
+                soundOn: this.state.soundOn,
+                midiOn: this.state.midiOn
             },
             length,
             this.state.scale,
-            this.state.musicalKey),
+            this.state.musicalKey,
+            this.state.globalVelocity,
+            this.state.channelSettings),
             gridStep: this.state.gridStep + 1
         });
     }
@@ -471,7 +591,9 @@ export class Application extends React.Component {
                     symmetries,
                     this.state.inputNumber,
                     forced,
-                    this.state.arrowSound
+                    this.state.arrowChannel,
+                    this.state.inputVelocity,
+                    this._getArrowNoteLengthMs()
                 )
             });
         }
@@ -480,7 +602,7 @@ export class Application extends React.Component {
         const gridString = window.btoa(JSON.stringify({
             grid: this.state.grid,
             noteLength: this.state.noteLength,
-            muted: this.state.muted
+            muted: !this.state.soundOn
         }));
         const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Farrowgrid.sagaciasoft.com/?data=${gridString}&amp;src=sdkpreparse`;
         window.open(shareUrl,'newwindow','width=300,height=250');return false;
@@ -513,18 +635,52 @@ export class Application extends React.Component {
                             Arrow Grid
                         </h1>
 
+                        <button 
+                            className={`play-btn-hero ${this.state.playing ? 'playing' : ''}`}
+                            onClick={this.state.playing ? this.pause : this.play}
+                            title={this.state.playing ? "Pause (Space)" : "Play (Space)"}
+                        >
+                            {this.state.playing ? (
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" fill="currentColor"/></svg>
+                            ) : (
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+                            )}
+                        </button>
+
+                        <div className="header-presets">
+                            <button className="nav-btn" onClick={this.prevPreset} title="Previous Preset (←)">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
+                            </button>
+                            <span className="preset-label">Sample Grids</span>
+                            <button className="nav-btn" onClick={this.nextPreset} title="Next Preset (→)">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/></svg>
+                            </button>
+                            <button className="hdr-btn danger" onClick={this.emptyGrid} title="Clear Grid (Delete)">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                                <span>Clear Grid</span>
+                            </button>
+                        </div>
+
                         <div className="header-actions">
                             <button 
-                                className={`hdr-btn ${!this.state.muted ? 'active' : ''}`}
+                                className={`hdr-btn ${this.state.soundOn ? 'active' : ''}`}
                                 onClick={this.muteToggle}
-                                title={this.state.muted ? "Unmute (M)" : "Mute (M)"}
+                                title={this.state.soundOn ? "Mute Sound" : "Enable Sound"}
                             >
-                                {this.state.muted ? (
-                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor"/></svg>
-                                ) : (
+                                {this.state.soundOn ? (
                                     <svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
+                                ) : (
+                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor"/></svg>
                                 )}
-                                <span>{this.state.muted ? 'Muted' : 'Sound'}</span>
+                                <span>Sound</span>
+                            </button>
+                            <button 
+                                className={`hdr-btn ${this.state.midiOn ? 'active' : ''}`}
+                                onClick={this.midiToggle}
+                                title={this.state.midiOn ? "Disable MIDI" : "Enable MIDI"}
+                            >
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 3H3v18h18V3zm-2 16H5V5h14v14zM7 7h2v10H7V7zm4 0h2v10h-2V7zm4 0h2v10h-2V7z" fill="currentColor"/></svg>
+                                <span>MIDI</span>
                             </button>
                         </div>
                     </header>
@@ -534,31 +690,6 @@ export class Application extends React.Component {
 
                         {/* ── LEFT PANEL ── */}
                         <div className="side-panel">
-                            {/* Presets */}
-                            <div className="panel-group">
-                                <h3>Presets</h3>
-                                <div className="preset-nav">
-                                    <button className="nav-btn" onClick={this.prevPreset} title="Previous Preset (←)">
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
-                                    </button>
-                                    <span className="preset-label">{this.state.currentPreset + 1} / {this.state.presets.length}</span>
-                                    <button className="nav-btn" onClick={this.nextPreset} title="Next Preset (→)">
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/></svg>
-                                    </button>
-                                </div>
-                                <button 
-                                    className={`play-btn ${this.state.playing ? 'playing' : ''}`}
-                                    onClick={this.state.playing ? this.pause : this.play}
-                                    title={this.state.playing ? "Pause (Space)" : "Play (Space)"}
-                                >
-                                    {this.state.playing ? (
-                                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" fill="currentColor"/></svg>
-                                    ) : (
-                                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-                                    )}
-                                </button>
-                            </div>
-
                             {/* Speed */}
                             <div className="panel-group">
                                 <h3>Speed</h3>
@@ -572,6 +703,20 @@ export class Application extends React.Component {
                                     title="Animation Speed"
                                 />
                                 <span className="slider-val">{Math.round(60000 / this.state.noteLength)} bpm</span>
+                            </div>
+
+                            {/* Arrow Note Length */}
+                            <div className="panel-group">
+                                <h3>Note Length</h3>
+                                <div className="note-length-picker">
+                                    <button className="nav-btn" onClick={this.prevNoteLength} title="Shorter note">
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
+                                    </button>
+                                    <span className="note-length-label">{this._getArrowNoteLengthDisplay()}</span>
+                                    <button className="nav-btn" onClick={this.nextNoteLength} title="Longer note">
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/></svg>
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Grid Size */}
@@ -589,23 +734,57 @@ export class Application extends React.Component {
                                 <span className="slider-val">{this.state.grid.size}×{this.state.grid.size}</span>
                             </div>
 
-                            {/* Sound type radio buttons */}
-                            <div className="sound-type-row">
-                                {[
-                                    { id: null,        label: 'Silent', colorClass: 'neon-blue' },
-                                    { id: 'sine',      label: 'Smooth', colorClass: 'neon-purple' },
-                                    { id: 'square',    label: 'Chiptune', colorClass: 'neon-green' },
-                                    { id: 'sawtooth',  label: 'Buzz', colorClass: 'neon-orange' },
-                                ].map(st => (
-                                    <button
-                                        key={st.id || 'silent'}
-                                        className={`sound-type-btn ${st.colorClass} ${this.state.arrowSound === st.id ? 'active' : ''}`}
-                                        onClick={() => this.setState({ arrowSound: st.id })}
-                                        title={`${st.label}${st.id ? ` (${st.id})` : ''}`}
-                                    >
-                                        {st.label}
-                                    </button>
-                                ))}
+                                            {/* Channel selector */}
+                            <div className="channel-row">
+                                <div className="channel-header">
+                                    <h3>Channels</h3>
+                                </div>
+                                {/* Channel buttons */}
+                                {Array.from({ length: MAX_CHANNELS }, (_, i) => i + 1).map(ch => {
+                                    const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
+                                    const isMuted = settings.muted || false;
+                                    return (
+                                        <div key={ch}
+                                            className={`channel-item ${this.state.arrowChannel === ch ? 'selected' : ''}`}
+                                            onClick={() => this.setState({ arrowChannel: ch })}
+                                        >
+                                            <div className={`channel-box ${CHANNEL_CSS_CLASSES[ch]} ${this.state.arrowChannel === ch ? 'active' : ''} ${isMuted ? 'muted' : ''}`}>
+                                                <span className="ch-label-inline">Ch{ch}</span>
+                                                <button
+                                                    className={`ch-mute-btn-inline ${isMuted ? 'muted' : ''}`}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const newSettings = { ...this.state.channelSettings };
+                                                        newSettings[ch] = { ...settings, muted: !isMuted };
+                                                        this.setState({ arrowChannel: ch, channelSettings: newSettings });
+                                                    }}
+                                                    title={isMuted ? `Unmute Ch ${ch}` : `Mute Ch ${ch}`}
+                                                >
+                                                    {isMuted ? (
+                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor"/></svg>
+                                                    ) : (
+                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" fill="currentColor"/></svg>
+                                                    )}
+                                                </button>
+                                                <input
+                                                    type="range"
+                                                    className="ch-slider-inline"
+                                                    min="0"
+                                                    max="100"
+                                                    value={Math.round((settings.volume ?? 1.0) * 100)}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        const newSettings = { ...this.state.channelSettings };
+                                                        newSettings[ch] = { ...settings, volume: parseInt(e.target.value) / 100 };
+                                                        this.setState({ arrowChannel: ch, channelSettings: newSettings });
+                                                    }}
+                                                    onClick={(e) => { e.stopPropagation(); this.setState({ arrowChannel: ch }); }}
+                                                    title={`Ch ${ch} volume: ${Math.round((settings.volume ?? 1.0) * 100)}%`}
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -692,6 +871,20 @@ export class Application extends React.Component {
                                         </button>
                                         </div>
                                     </div>
+                                    <div className="tool-btn-labeled" style={{width:'100%'}}>
+                                        <span className="tool-label">volume</span>
+                                        <input
+                                            type="range"
+                                            className="slider-h"
+                                            min="5"
+                                            max="100"
+                                            value={Math.round(this.state.inputVelocity * 100)}
+                                            onChange={(e) => this.setState({ inputVelocity: parseInt(e.target.value) / 100 })}
+                                            title={`Arrow volume: ${Math.round(this.state.inputVelocity * 100)}%`}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <span className="slider-val">{Math.round(this.state.inputVelocity * 100)}%</span>
+                                    </div>
                                 </div>
 
                                 {/* ── Wall Tool Group ── */}
@@ -703,7 +896,7 @@ export class Application extends React.Component {
                                         {['top','bottom','left','right'].map(side => (
                                             <button
                                                 key={side}
-                                                className={`wall-side-btn ${side} ${this.state.wallSides.has(side) ? 'active' : ''}`}
+                                                className={`wall-side-btn ${side} ${this.state.drawMode === 'wall' && this.state.wallSides.has(side) ? 'active' : ''}`}
                                                 onClick={() => {
                                                     const next = new Set(this.state.wallSides);
                                                     if (next.has(side)) next.delete(side);
@@ -719,7 +912,7 @@ export class Application extends React.Component {
                                             </button>
                                         ))}
                                         <button
-                                            className={`wall-side-btn closest wide ${this.state.wallClosest ? 'active' : ''}`}
+                                            className={`wall-side-btn closest wide ${this.state.wallClosest && this.state.drawMode === 'wall' ? 'active' : ''}`}
                                             onClick={() => this.setState({ drawMode: 'wall', deleting: false, wallClosest: true, wallSides: new Set() })}
                                             title="Add wall to closest edge"
                                         >
@@ -747,18 +940,6 @@ export class Application extends React.Component {
                                         <svg viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
                                     </button>
                                 </div>
-                            </div>
-
-                            {/* Clear */}
-                            <div className="panel-group">
-                                <button 
-                                    className="tool-btn wide danger"
-                                    onClick={this.emptyGrid}
-                                    title="Clear All (Delete)"
-                                >
-                                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
-                                    <span>Clear</span>
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -803,6 +984,20 @@ export class Application extends React.Component {
                             >
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
                             </button>
+                        </div>
+                        <div className="footer-group">
+                            <label>Volume</label>
+                            <input
+                                type="range"
+                                className="slider-h"
+                                min="0"
+                                max="100"
+                                value={Math.round(this.state.globalVelocity * 100)}
+                                onChange={(e) => this.setState({ globalVelocity: parseInt(e.target.value) / 100 })}
+                                title={`Master volume: ${Math.round(this.state.globalVelocity * 100)}%`}
+                                style={{width: '60px'}}
+                            />
+                            <span className="slider-val">{Math.round(this.state.globalVelocity * 100)}%</span>
                         </div>
                     </footer>
                 </div>
