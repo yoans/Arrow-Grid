@@ -220,14 +220,13 @@ export const setUpCanvas = (state) => {
         // eslint-disable-next-line no-param-reassign
         sketch.setup = () => {
             sketch.createCanvas(gridCanvasSize + gridCanvasBorderSize * 2, gridCanvasSize + gridCanvasBorderSize * 2).parent('sketch-holder').id('arrows-animation');
-        };
-        // eslint-disable-next-line no-param-reassign
-        sketch.draw = () => {
-            mouseX = sketch.mouseX;
-            mouseY = sketch.mouseY;
-            mouseIsPressed = sketch.mouseIsPressed;
             
+            // ── Event handlers (set once in setup, not every frame) ──
             const handleCanvasClick = (e, fromTouch) => {
+                // Update mouse state from sketch at event time
+                mouseX = sketch.mouseX;
+                mouseY = sketch.mouseY;
+                mouseIsPressed = sketch.mouseIsPressed;
                 // Debounce double-fires from p5 event system
                 const now = Date.now();
                 if (now - lastClickTime < 100) return;
@@ -328,6 +327,12 @@ export const setUpCanvas = (state) => {
             }
             sketch.mouseDragged = onDrag;
             sketch.touchMoved = onDrag;
+        };
+        // eslint-disable-next-line no-param-reassign
+        sketch.draw = () => {
+            mouseX = sketch.mouseX;
+            mouseY = sketch.mouseY;
+            mouseIsPressed = sketch.mouseIsPressed;
             
             // draw grid
             sketch.push()

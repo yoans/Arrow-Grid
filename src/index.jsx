@@ -1,7 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './arrow-grid';
-import { midiUtils } from './arrow-grid/midi';
 
 function getParameterByName(name, url) {
     if (!url) url = window.location.href;
@@ -26,5 +25,3 @@ const root = createRoot(container);
 root.render(
     <App noteLength={parsedGrid.noteLength} grid={parsedGrid.grid} />
 );
-
-midiUtils();

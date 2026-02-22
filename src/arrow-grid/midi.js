@@ -64,7 +64,7 @@ const changeMIDIOut = (ev) => {
         }
         // Send Program Change 0 (piano) on channels 1-7 so each channel has a sound loaded
         if (midiOut) {
-            for (let ch = 0; ch < 7; ch++) {
+            for (let ch = 0; ch < 16; ch++) {
                 midiOut.send([0xC0 + ch, 0]);
             }
         }

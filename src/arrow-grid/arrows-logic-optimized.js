@@ -299,7 +299,7 @@ export const nextGrid = (grid, length, scale, musicalKey, globalVelocity, channe
         
         const hash = arrowHash(arrow.x, arrow.y, arrow.vector);
         const ch = arrow.channel ?? 1;
-        const key = hash * 8 + ch;  // 8 possible channels (0-7)
+        const key = hash * 17 + ch;  // 17 to avoid collisions with channels 1-16
         const existing = vectorMap.get(key);
         if (existing === undefined) {
             vectorMap.set(key, { count: 1, channel: ch, x: arrow.x, y: arrow.y, vector: arrow.vector, velocity: arrow.velocity ?? 1.0 });

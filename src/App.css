@@ -1456,3 +1456,131 @@ kbd { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15)
   }
   .nav-btn { width: 32px; height: 32px; }
 }
+
+/* ── Focus-visible for keyboard accessibility ── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.8);
+  outline-offset: 2px;
+}
+
+/* ── Toast notification ── */
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(102, 126, 234, 0.95);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 0.85em;
+  font-weight: 500;
+  z-index: 9999;
+  pointer-events: none;
+  animation: toastIn 0.25s ease-out;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Intro Modal ── */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+.intro-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 28px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  color: var(--text);
+}
+.intro-modal h2 {
+  font-size: 1.6em;
+  margin: 0 0 12px 0;
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.intro-modal p {
+  color: var(--text-dim);
+  margin: 0 0 18px 0;
+  font-size: 0.95em;
+  line-height: 1.5;
+}
+.intro-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 22px 0;
+  text-align: left;
+}
+.intro-steps li {
+  padding: 6px 0;
+  font-size: 0.88em;
+  color: var(--text-dim);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.intro-steps li:last-child { border-bottom: none; }
+.intro-steps li strong { color: var(--text); }
+.intro-close-btn {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
+  border: none;
+  color: white;
+  padding: 10px 28px;
+  border-radius: 8px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.intro-close-btn:hover { opacity: 0.85; }
+
+/* ── Floating action bar ── */
+.fab-bar {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  z-index: 100;
+}
+.fab-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.fab-btn:hover { color: var(--text); background: rgba(102, 126, 234, 0.15); }
+.fab-btn:active { transform: scale(0.92); }
+.fab-btn:disabled { opacity: 0.3; cursor: default; }
+.fab-btn:disabled:hover { background: var(--bg-card); color: var(--text-dim); }
+
+/* ── Scale optgroup styling ── */
+select.sel optgroup {
+  font-weight: 600;
+  color: var(--text-dim);
+  font-style: normal;
+}
+select.sel option {
+  font-weight: 400;
+  padding-left: 8px;
+}

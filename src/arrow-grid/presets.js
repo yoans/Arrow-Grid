@@ -1,6 +1,7 @@
 export default [
   // 0 — Rainbow Spiral: 7 arrows symmetrically placed, one per channel
   {
+    name: "Rainbow Spiral",
     size: 8,
     arrows: [
       { x: 3, y: 1, vector: 1, channel: 1 },  // blue — right
@@ -19,6 +20,7 @@ export default [
   },
   // 1 — Rainbow X: diagonal cross with all 7 channel colors
   {
+    name: "Rainbow X",
     size: 8,
     arrows: [
       { x: 0, y: 0, vector: 0, channel: 1 },
@@ -42,6 +44,7 @@ export default [
   },
   // 2 — Diamond cage: 4-fold symmetry with walls forming a diamond
   {
+    name: "Diamond Cage",
     size: 8,
     arrows: [
       { x: 3, y: 1, vector: 1, channel: 1 },
@@ -67,6 +70,7 @@ export default [
   },
   // 3 — Spiral channels: concentric rotating arrows in different colors
   {
+    name: "Spiral Channels",
     size: 10,
     arrows: [
       // Outer ring — blue ch1
@@ -103,6 +107,7 @@ export default [
   },
   // 4 — Walled corridors: arrows bounce through maze-like walls
   {
+    name: "Walled Corridors",
     size: 8,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },
@@ -129,6 +134,7 @@ export default [
   },
   // 5 — Color pinwheel: rotational symmetry with 4 color arms
   {
+    name: "Color Pinwheel",
     size: 9,
     arrows: [
       // Arm 1 — up (blue)
@@ -160,6 +166,7 @@ export default [
   },
   // 6 — Cascading steps: staircase pattern with alternating channel colors
   {
+    name: "Cascading Steps",
     size: 12,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },
@@ -197,6 +204,7 @@ export default [
   },
   // 7 — Mirror hall: horizontal + vertical symmetry with walls creating halls
   {
+    name: "Mirror Hall",
     size: 10,
     arrows: [
       // Top-left quadrant
@@ -246,6 +254,7 @@ export default [
   },
   // 8 — Heartbeat: converging arrows with pink/red palette
   {
+    name: "Heartbeat",
     size: 8,
     arrows: [
       // Left side heart
@@ -280,6 +289,7 @@ export default [
   },
   // 9 — Labyrinth: complex wall maze with multi-colored arrows
   {
+    name: "Labyrinth",
     size: 12,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },
@@ -317,6 +327,7 @@ export default [
   },
   // 10 — Diagonal weave: forward-diagonal symmetry with alternating colors
   {
+    name: "Diagonal Weave",
     size: 13,
     arrows: [
       { x: 0, y: 12, vector: 2, channel: 1 },
@@ -350,6 +361,7 @@ export default [
   },
   // 11 — Grid city: walled grid with arrows in each cell, all different colors
   {
+    name: "Grid City",
     size: 9,
     arrows: [
       { x: 1, y: 1, vector: 1, channel: 1 },
@@ -391,6 +403,7 @@ export default [
   },
   // 12 — Color fountain: center burst with walls channeling outward
   {
+    name: "Color Fountain",
     size: 10,
     arrows: [
       { x: 4, y: 4, vector: 0, channel: 1 },
