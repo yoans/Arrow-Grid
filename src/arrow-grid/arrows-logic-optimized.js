@@ -96,7 +96,7 @@ const isInBounds = (arrow, size) => {
 /**
  * Clone an arrow object
  */
-const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector, channel: arrow.channel ?? 1, velocity: arrow.velocity ?? 1.0, noteLength: arrow.noteLength ?? 500 });
+const cloneArrow = (arrow) => ({ x: arrow.x, y: arrow.y, vector: arrow.vector, channel: arrow.channel ?? 1, velocity: arrow.velocity ?? 1.0 });
 
 /**
  * Generate a unique ID (simple counter-based for performance)
@@ -144,7 +144,7 @@ const MAX_ARROWS = 4000;
 /**
  * Add arrows to grid with symmetry support
  */
-export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arrowChannel, arrowVelocity, arrowNoteLength) => {
+export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arrowChannel, arrowVelocity) => {
     if (grid.arrows.length > MAX_ARROWS) return grid;
     
     // Check for duplicate
@@ -157,7 +157,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
     
     // Add base arrows
     for (let i = 0; i < inputNumber; i++) {
-        toAdd.push({ x, y, vector: dir, channel: arrowChannel ?? 1, velocity: arrowVelocity ?? 1.0, noteLength: arrowNoteLength ?? 500 });
+        toAdd.push({ x, y, vector: dir, channel: arrowChannel ?? 1, velocity: arrowVelocity ?? 1.0 });
     }
     
     // Apply symmetries
@@ -173,8 +173,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 y: getMirror(a.y, grid.size),
                 vector: [2, 1, 0, 3][a.vector],
                 channel: a.channel,
-                velocity: a.velocity,
-                noteLength: a.noteLength
+                velocity: a.velocity
             });
         }
     }
@@ -188,8 +187,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 y: a.y,
                 vector: [0, 3, 2, 1][a.vector],
                 channel: a.channel,
-                velocity: a.velocity,
-                noteLength: a.noteLength
+                velocity: a.velocity
             });
         }
     }
@@ -203,8 +201,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 y: a.x,
                 vector: [3, 2, 1, 0][a.vector],
                 channel: a.channel,
-                velocity: a.velocity,
-                noteLength: a.noteLength
+                velocity: a.velocity
             });
         }
     }
@@ -218,8 +215,7 @@ export const addToGrid = (grid, x, y, dir, symmetries, inputNumber, forced, arro
                 y: getMirror(a.x, grid.size),
                 vector: [1, 0, 3, 2][a.vector],
                 channel: a.channel,
-                velocity: a.velocity,
-                noteLength: a.noteLength
+                velocity: a.velocity
             });
         }
     }

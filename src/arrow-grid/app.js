@@ -36,17 +36,6 @@ const minSize = 2;
 const minNoteLength = -500;
 const maxNoteLength = -50;
 
-// Note length table: musical note values as beat fractions
-// Actual ms is computed from BPM: ms = (beats * 60000) / bpm
-const NOTE_LENGTH_TABLE = [
-    { beats: 0.125, label: '32nd' },
-    { beats: 0.25,  label: '16th' },
-    { beats: 0.5,   label: '8th' },
-    { beats: 1,     label: 'Quarter' },
-    { beats: 2,     label: 'Half' },
-    { beats: 4,     label: 'Whole' },
-];
-// Count-based entries (2ct through grid size) will be generated dynamically
 
 // Simple click sound using Tone.js
 let clickSynth = null;
@@ -83,7 +72,6 @@ export class Application extends React.Component {
             presets,
             inputDirection: 0,
             noteLength: props.noteLength || 350,
-            arrowNoteLength: 3,  // index into NOTE_LENGTH_TABLE (default: Quarter)
             grid: presets[0] || newGrid(8, 6),  // Start with first preset
             playing: false,
             soundOn: false,
@@ -102,6 +90,7 @@ export class Application extends React.Component {
             musicalKey: 60,
             arrowChannel: 1,   // 1-7 = channel number
             activeChannels: MAX_CHANNELS,  // all channels always visible
+            activePopup: null,  // which popup is open: null, 'speed', 'gridSize', or channel number
             channelSettings: {  // per-channel settings
                 1: createChannelSettings(1),
                 2: createChannelSettings(2),
@@ -110,6 +99,15 @@ export class Application extends React.Component {
                 5: createChannelSettings(5),
                 6: createChannelSettings(6),
                 7: createChannelSettings(7),
+                8: createChannelSettings(8),
+                9: createChannelSettings(9),
+                10: createChannelSettings(10),
+                11: createChannelSettings(11),
+                12: createChannelSettings(12),
+                13: createChannelSettings(13),
+                14: createChannelSettings(14),
+                15: createChannelSettings(15),
+                16: createChannelSettings(16),
             },
             inputVelocity: 1.0,  // 0.0–1.0 per-arrow velocity
             globalVelocity: 1.0, // 0.0–1.0 master velocity multiplier
@@ -139,6 +137,9 @@ export class Application extends React.Component {
         // Add keyboard shortcuts
         document.addEventListener('keydown', this.handleKeyDown);
         
+        // Click outside to close volume popup
+        document.addEventListener('mousedown', this._closeVolumePopup);
+        
         // Add resize listener for responsive canvas
         window.addEventListener('resize', this._handleResize);
         
@@ -156,12 +157,19 @@ export class Application extends React.Component {
     
     componentWillUnmount() {
         document.removeEventListener('keydown', this.handleKeyDown);
+        document.removeEventListener('mousedown', this._closeVolumePopup);
         window.removeEventListener('resize', this._handleResize);
         clearTimeout(this._timerID);
         clearTimeout(this._resizeTimer);
     }
 
     _resizeTimer = null;
+
+    _closeVolumePopup = (e) => {
+        if (this.state.activePopup !== null && !e.target.closest('.popup-trigger-wrap')) {
+            this.setState({ activePopup: null });
+        }
+    };
 
     _computeCanvasSize = () => {
         const vw = window.innerWidth;
@@ -371,43 +379,6 @@ export class Application extends React.Component {
         }, () => this._scheduleNextTick());
     }
 
-    _getNoteLengthSteps = () => {
-        const gridSize = this.state.grid?.size || 8;
-        const steps = [...NOTE_LENGTH_TABLE];
-        // Add count-based entries: 2ct through gridSize-ct
-        for (let c = 2; c <= gridSize; c++) {
-            steps.push({ beats: 4 * c, label: `${c}ct` });
-        }
-        return steps;
-    }
-
-    _getArrowNoteLengthDisplay = () => {
-        const steps = this._getNoteLengthSteps();
-        const idx = Math.min(this.state.arrowNoteLength, steps.length - 1);
-        return steps[idx]?.label || 'Quarter';
-    }
-
-    _getArrowNoteLengthMs = () => {
-        const steps = this._getNoteLengthSteps();
-        const idx = Math.min(this.state.arrowNoteLength, steps.length - 1);
-        const beats = steps[idx]?.beats || 1;
-        const bpm = Math.round(60000 / this.state.noteLength);
-        return Math.round((beats * 60000) / bpm);
-    }
-
-    prevNoteLength = () => {
-        if (this.state.arrowNoteLength > 0) {
-            this.setState({ arrowNoteLength: this.state.arrowNoteLength - 1 });
-        }
-    }
-
-    nextNoteLength = () => {
-        const steps = this._getNoteLengthSteps();
-        if (this.state.arrowNoteLength < steps.length - 1) {
-            this.setState({ arrowNoteLength: this.state.arrowNoteLength + 1 });
-        }
-    }
-
     nextGrid = (length) => {
         this.setState({
             grid: nextGridLogic({
@@ -592,8 +563,7 @@ export class Application extends React.Component {
                     this.state.inputNumber,
                     forced,
                     this.state.arrowChannel,
-                    this.state.inputVelocity,
-                    this._getArrowNoteLengthMs()
+                    this.state.inputVelocity
                 )
             });
         }
@@ -689,49 +659,77 @@ export class Application extends React.Component {
                     <div className="console-body">
 
                         {/* ── LEFT PANEL ── */}
-                        <div className="side-panel">
+                        <div className="side-panel" style={{position:'relative'}}>
+                            {/* Slider overlay — renders on top of side panel */}
+                            {(this.state.activePopup === 'speed' || this.state.activePopup === 'gridSize' || typeof this.state.activePopup === 'number') && (
+                                <div
+                                    className="slider-overlay popup-trigger-wrap"
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={typeof this.state.activePopup === 'number' ? {
+                                        '--ch-r': CHANNEL_COLORS[this.state.activePopup]?.[0] ?? 102,
+                                        '--ch-g': CHANNEL_COLORS[this.state.activePopup]?.[1] ?? 126,
+                                        '--ch-b': CHANNEL_COLORS[this.state.activePopup]?.[2] ?? 234,
+                                    } : undefined}
+                                >
+                                    <span className="slider-overlay-title">
+                                        {this.state.activePopup === 'speed' ? 'Speed' : this.state.activePopup === 'gridSize' ? 'Grid Size' : `Ch${this.state.activePopup} Vol`}
+                                    </span>
+                                    <span className="slider-overlay-val">
+                                        {this.state.activePopup === 'speed'
+                                            ? `${Math.round(60000 / this.state.noteLength)} bpm`
+                                            : this.state.activePopup === 'gridSize'
+                                                ? `${this.state.grid.size}×${this.state.grid.size}`
+                                                : `${Math.round(((this.state.channelSettings[this.state.activePopup]?.volume ?? 1.0)) * 100)}%`
+                                        }
+                                    </span>
+                                    <input
+                                        type="range"
+                                        className="slider-overlay-range"
+                                        orient="vertical"
+                                        min={this.state.activePopup === 'speed' ? minNoteLength : this.state.activePopup === 'gridSize' ? minSize : 0}
+                                        max={this.state.activePopup === 'speed' ? maxNoteLength : this.state.activePopup === 'gridSize' ? maxSize : 100}
+                                        value={this.state.activePopup === 'speed'
+                                            ? -1 * this.state.noteLength
+                                            : this.state.activePopup === 'gridSize'
+                                                ? this.state.grid.size
+                                                : Math.round((this.state.channelSettings[this.state.activePopup]?.volume ?? 1.0) * 100)
+                                        }
+                                        onChange={(e) => {
+                                            if (this.state.activePopup === 'speed') {
+                                                this.newNoteLength(e.target.value);
+                                            } else if (this.state.activePopup === 'gridSize') {
+                                                this.newSize(e.target.value);
+                                            } else {
+                                                const ch = this.state.activePopup;
+                                                const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
+                                                const newSettings = { ...this.state.channelSettings };
+                                                newSettings[ch] = { ...settings, volume: parseInt(e.target.value) / 100 };
+                                                this.setState({ channelSettings: newSettings });
+                                            }
+                                        }}
+                                    />
+                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                </div>
+                            )}
+
                             {/* Speed */}
                             <div className="panel-group">
                                 <h3>Speed</h3>
-                                <input
-                                    type="range"
-                                    className="slider-h"
-                                    min={minNoteLength}
-                                    max={maxNoteLength}
-                                    value={-1*this.state.noteLength}
-                                    onChange={(e) => this.newNoteLength(e.target.value)}
-                                    title="Animation Speed"
-                                />
-                                <span className="slider-val">{Math.round(60000 / this.state.noteLength)} bpm</span>
-                            </div>
-
-                            {/* Arrow Note Length */}
-                            <div className="panel-group">
-                                <h3>Note Length</h3>
-                                <div className="note-length-picker">
-                                    <button className="nav-btn" onClick={this.prevNoteLength} title="Shorter note">
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
-                                    </button>
-                                    <span className="note-length-label">{this._getArrowNoteLengthDisplay()}</span>
-                                    <button className="nav-btn" onClick={this.nextNoteLength} title="Longer note">
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/></svg>
-                                    </button>
-                                </div>
+                                <button
+                                    className="popup-trigger-btn popup-trigger-wrap"
+                                    onClick={() => this.setState({ activePopup: this.state.activePopup === 'speed' ? null : 'speed' })}
+                                    title="Adjust speed"
+                                >{Math.round(60000 / this.state.noteLength)} bpm</button>
                             </div>
 
                             {/* Grid Size */}
                             <div className="panel-group">
                                 <h3>Grid Size</h3>
-                                <input
-                                    type="range"
-                                    className="slider-h"
-                                    min={minSize}
-                                    max={maxSize}
-                                    value={this.state.grid.size}
-                                    onChange={(e) => this.newSize(e.target.value)}
-                                    title="Grid Size"
-                                />
-                                <span className="slider-val">{this.state.grid.size}×{this.state.grid.size}</span>
+                                <button
+                                    className="popup-trigger-btn popup-trigger-wrap"
+                                    onClick={() => this.setState({ activePopup: this.state.activePopup === 'gridSize' ? null : 'gridSize' })}
+                                    title="Adjust grid size"
+                                >{this.state.grid.size}×{this.state.grid.size}</button>
                             </div>
 
                                             {/* Channel selector */}
@@ -761,26 +759,24 @@ export class Application extends React.Component {
                                                     title={isMuted ? `Unmute Ch ${ch}` : `Mute Ch ${ch}`}
                                                 >
                                                     {isMuted ? (
-                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor"/></svg>
+                                                        <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" strokeWidth="2"/></svg>
                                                     ) : (
-                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" fill="currentColor"/></svg>
+                                                        <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><path d="M7 12.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                                     )}
                                                 </button>
-                                                <input
-                                                    type="range"
-                                                    className="ch-slider-inline"
-                                                    min="0"
-                                                    max="100"
-                                                    value={Math.round((settings.volume ?? 1.0) * 100)}
-                                                    onChange={(e) => {
-                                                        e.stopPropagation();
-                                                        const newSettings = { ...this.state.channelSettings };
-                                                        newSettings[ch] = { ...settings, volume: parseInt(e.target.value) / 100 };
-                                                        this.setState({ arrowChannel: ch, channelSettings: newSettings });
-                                                    }}
-                                                    onClick={(e) => { e.stopPropagation(); this.setState({ arrowChannel: ch }); }}
-                                                    title={`Ch ${ch} volume: ${Math.round((settings.volume ?? 1.0) * 100)}%`}
-                                                />
+                                                <div className="ch-vol-wrap popup-trigger-wrap">
+                                                    <button
+                                                        className="ch-vol-btn"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            this.setState({ activePopup: this.state.activePopup === ch ? null : ch, arrowChannel: ch });
+                                                        }}
+                                                        title={`Ch ${ch} volume: ${Math.round((settings.volume ?? 1.0) * 100)}%`}
+                                                    >
+                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
+                                                        <span>{Math.round((settings.volume ?? 1.0) * 100)}%</span>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -794,7 +790,55 @@ export class Application extends React.Component {
                         </div>
 
                         {/* ── RIGHT PANEL ── */}
-                        <div className="side-panel">
+                        <div className="side-panel" style={{position:'relative'}}>
+                            {/* Slider overlay for right panel */}
+                            {(this.state.activePopup === 'arrowVol' || this.state.activePopup === 'masterVol') && (
+                                <div className="slider-overlay popup-trigger-wrap" onClick={(e) => e.stopPropagation()}>
+                                    <span className="slider-overlay-title">{this.state.activePopup === 'arrowVol' ? 'Arrow Volume' : 'Master Volume'}</span>
+                                    <span className="slider-overlay-val">
+                                        {this.state.activePopup === 'arrowVol'
+                                            ? `${Math.round(this.state.inputVelocity * 100)}%`
+                                            : `${Math.round(this.state.globalVelocity * 100)}%`
+                                        }
+                                    </span>
+                                    <input
+                                        type="range"
+                                        className="slider-overlay-range"
+                                        orient="vertical"
+                                        min={this.state.activePopup === 'arrowVol' ? '5' : '0'}
+                                        max="100"
+                                        value={this.state.activePopup === 'arrowVol'
+                                            ? Math.round(this.state.inputVelocity * 100)
+                                            : Math.round(this.state.globalVelocity * 100)
+                                        }
+                                        onChange={(e) => {
+                                            if (this.state.activePopup === 'arrowVol') {
+                                                this.setState({ inputVelocity: parseInt(e.target.value) / 100 });
+                                            } else {
+                                                this.setState({ globalVelocity: parseInt(e.target.value) / 100 });
+                                            }
+                                        }}
+                                    />
+                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                </div>
+                            )}
+                            {/* Channel select overlay */}
+                            {this.state.activePopup === 'chSelect' && (
+                                <div className="slider-overlay ch-select-overlay popup-trigger-wrap" onClick={(e) => e.stopPropagation()}>
+                                    <span className="slider-overlay-title">Select Channel</span>
+                                    <div className="ch-select-grid">
+                                        {Array.from({length: MAX_CHANNELS}, (_, i) => i + 1).map(ch => (
+                                            <button
+                                                key={ch}
+                                                className={`ch-select-item ${this.state.arrowChannel === ch ? 'selected' : ''}`}
+                                                style={{background: `rgb(${CHANNEL_COLORS[ch].join(',')})`}}
+                                                onClick={(e) => { e.stopPropagation(); this.setState({ arrowChannel: ch, activePopup: null }); }}
+                                            >{ch}</button>
+                                        ))}
+                                    </div>
+                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                </div>
+                            )}
                             {/* Draw Tools */}
                             <div className="panel-group draw-panel">
                                 <h3>Draw</h3>
@@ -821,8 +865,23 @@ export class Application extends React.Component {
                                 {/* ── Arrow Tool Group ── */}
                                 <div className={`draw-tool-group ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'arrow' ? 'active-section' : 'inactive-section'}`}
                                      onClick={() => this.setState({ drawMode: 'arrow', deleting: false })}
+                                     style={{
+                                         '--ch-r': CHANNEL_COLORS[this.state.arrowChannel]?.[0] ?? 102,
+                                         '--ch-g': CHANNEL_COLORS[this.state.arrowChannel]?.[1] ?? 126,
+                                         '--ch-b': CHANNEL_COLORS[this.state.arrowChannel]?.[2] ?? 234,
+                                     }}
                                 >
                                     <span className="group-label">Arrow</span>
+                                    {/* Channel selector */}
+                                    <div className="tool-btn-labeled" style={{width:'100%'}}>
+                                        <span className="tool-label">channel</span>
+                                        <button
+                                            className="ch-select-btn popup-trigger-wrap"
+                                            onClick={(e) => { e.stopPropagation(); this.setState({ activePopup: this.state.activePopup === 'chSelect' ? null : 'chSelect' }); }}
+                                            style={{background: `rgb(${CHANNEL_COLORS[this.state.arrowChannel].join(',')})`}}
+                                            title={`Channel ${this.state.arrowChannel}`}
+                                        >Ch{this.state.arrowChannel}</button>
+                                    </div>
                                     <div className="tool-row">
                                         <div className="tool-btn-labeled">
                                             <span className="tool-label">direction</span>
@@ -872,18 +931,12 @@ export class Application extends React.Component {
                                         </div>
                                     </div>
                                     <div className="tool-btn-labeled" style={{width:'100%'}}>
-                                        <span className="tool-label">volume</span>
-                                        <input
-                                            type="range"
-                                            className="slider-h"
-                                            min="5"
-                                            max="100"
-                                            value={Math.round(this.state.inputVelocity * 100)}
-                                            onChange={(e) => this.setState({ inputVelocity: parseInt(e.target.value) / 100 })}
+                                        <span className="tool-label">Arrow Vol</span>
+                                        <button
+                                            className="popup-trigger-btn"
+                                            onClick={(e) => { e.stopPropagation(); this.setState({ activePopup: this.state.activePopup === 'arrowVol' ? null : 'arrowVol' }); }}
                                             title={`Arrow volume: ${Math.round(this.state.inputVelocity * 100)}%`}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                        <span className="slider-val">{Math.round(this.state.inputVelocity * 100)}%</span>
+                                        >{Math.round(this.state.inputVelocity * 100)}%</button>
                                     </div>
                                 </div>
 
@@ -986,18 +1039,13 @@ export class Application extends React.Component {
                             </button>
                         </div>
                         <div className="footer-group">
-                            <label>Volume</label>
-                            <input
-                                type="range"
-                                className="slider-h"
-                                min="0"
-                                max="100"
-                                value={Math.round(this.state.globalVelocity * 100)}
-                                onChange={(e) => this.setState({ globalVelocity: parseInt(e.target.value) / 100 })}
+                            <label>Master Vol</label>
+                            <button
+                                className="popup-trigger-btn popup-trigger-wrap"
+                                onClick={() => this.setState({ activePopup: this.state.activePopup === 'masterVol' ? null : 'masterVol' })}
                                 title={`Master volume: ${Math.round(this.state.globalVelocity * 100)}%`}
-                                style={{width: '60px'}}
-                            />
-                            <span className="slider-val">{Math.round(this.state.globalVelocity * 100)}%</span>
+                                style={{width: '70px', padding: '4px 8px', minHeight: '24px', fontSize: '0.75em'}}
+                            >{Math.round(this.state.globalVelocity * 100)}%</button>
                         </div>
                     </footer>
                 </div>

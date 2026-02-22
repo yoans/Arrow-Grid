@@ -111,7 +111,7 @@ export const makePizzaSound = (index, length, scale, musicalKey) => {
 // Play sounds for arrows that hit boundaries
 // Each arrow carries a .channel property (1-7 = channel number)
 // Muted channels make no sound. Otherwise play browser sound and/or send MIDI.
-// channelSettings: { [channelId]: { volume, noteLength, midiChannel, muted } }
+// channelSettings: { [channelId]: { volume, midiChannel, muted } }
 export const playSounds = async (boundaryArrows, size, length, soundOn, midiOn, scale, musicalKey, globalVelocity, channelSettings) => {
     const gVel = globalVelocity ?? 1.0;
     const chSettings = channelSettings || {};
@@ -124,12 +124,11 @@ export const playSounds = async (boundaryArrows, size, length, soundOn, midiOn, 
             if (settings.muted) return; // muted channel
             const midiChannel = settings.midiChannel || ch;
             const chVolume = settings.volume ?? 1.0;
-            const chNoteLength = arrow.noteLength || settings.noteLength || length;
             const noteToPlay = getIndex(arrow.x, arrow.y, size, arrow.vector);
             const vel = (arrow.velocity ?? 1.0) * gVel * chVolume;
             makeMIDImessage(
                 musicalKey + scale[noteToPlay % scale.length],
-                chNoteLength,
+                length,
                 vel,
                 midiChannel
             ).play();
@@ -153,13 +152,11 @@ export const playSounds = async (boundaryArrows, size, length, soundOn, midiOn, 
         const settings = chSettings[ch] || {};
         if (settings.muted) return; // muted channel makes no sound
         const chVolume = settings.volume ?? 1.0;
-        const chNoteLength = arrow.noteLength || settings.noteLength || length;
         const noteIndex = getIndex(arrow.x, arrow.y, size, arrow.vector);
-        const key = `${noteIndex}-${chNoteLength}`;
-        if (!notesToPlay.has(key)) {
+        if (!notesToPlay.has(noteIndex)) {
             const noteName = getNoteName(noteIndex, scale, musicalKey);
             const vel = (arrow.velocity ?? 1.0) * gVel * chVolume;
-            notesToPlay.set(key, { noteName, velocity: vel, duration: chNoteLength });
+            notesToPlay.set(noteIndex, { noteName, velocity: vel, duration: length });
         }
     });
 
