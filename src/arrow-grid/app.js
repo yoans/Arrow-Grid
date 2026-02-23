@@ -23,7 +23,7 @@ import {
     getGridCanvasSize
 } from './animations';
 // sliders.js is no longer used (popup-trigger buttons replaced DOM sliders)
-import { rescanMIDI, midiUtils, onMidiConnected } from './midi';
+import { rescanMIDI, midiUtils, onMidiConnected, sendProgramChange, isMidiConnected } from './midi';
 import presets from './presets';
 import Chance from 'chance';
 import scales, { scaleGroups } from './scales';
@@ -108,7 +108,7 @@ export class Application extends React.Component {
             noteLength: props.noteLength || generateRandomSpeed(),
             grid: props.grid || generateRandomGrid(),  // Start with random grid
             playing: false,
-            soundOn: true,
+            soundOn: localStorage.getItem('arrowgrid-sound') === 'on',
             midiOn: false,
             deleting: false,
             drawMode: 'arrow',  // 'arrow' or 'wall'
@@ -156,6 +156,7 @@ export class Application extends React.Component {
             showSaveManager: false,
             saveNameInput: '',
             showInfo: false,
+            showMidiHelp: false,
         };
     }
 
@@ -198,11 +199,13 @@ export class Application extends React.Component {
         
         // Auto-enable MIDI when a device is connected
         onMidiConnected(() => {
-            this.setState({ midiOn: true, soundOn: true });
+            this.setState({ midiOn: true });
         });
         
-        // Auto-play after a short delay to show users what the app does
-        setTimeout(() => this.play(), 500);
+        // Auto-play after a short delay — but wait for intro modal dismissal
+        if (!this.state.showIntro) {
+            setTimeout(() => this.play(), 500);
+        }
     }
     
     componentDidUpdate() {
@@ -563,12 +566,17 @@ export class Application extends React.Component {
                 await Tone.start();
             } catch (e) { /* ignore */ }
         }
+        localStorage.setItem('arrowgrid-sound', willEnable ? 'on' : 'off');
         this.setState({ soundOn: willEnable }, () => {
             if (this.state.soundOn) sound.play();
         });
     }
     midiToggle = () => {
-        this.setState({ midiOn: !this.state.midiOn });
+        if (!isMidiConnected() && !this.state.midiOn) {
+            this.setState({ showMidiHelp: true });
+        } else {
+            this.setState({ midiOn: !this.state.midiOn });
+        }
     }
     changeEditMode = () => {
         this.setState({ deleting: !this.state.deleting });
@@ -866,24 +874,26 @@ export class Application extends React.Component {
                             Arrow Grid
                         </h1>
 
-                        <button 
-                            className="hdr-btn undo-btn"
-                            onClick={this.undo}
-                            title="Undo (Ctrl+Z)"
-                            disabled={this.state.undoStack.length === 0}
-                        >
-                            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
-                            <span>Undo</span>
-                        </button>
-                        <button 
-                            className="hdr-btn undo-btn"
-                            onClick={this.redo}
-                            title="Redo (Ctrl+Shift+Z)"
-                            disabled={this.state.redoStack.length === 0}
-                        >
-                            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.06-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" fill="currentColor"/></svg>
-                            <span>Redo</span>
-                        </button>
+                        <div className="undo-redo-group">
+                            <button 
+                                className="undo-redo-btn"
+                                onClick={this.undo}
+                                title="Undo (Ctrl+Z)"
+                                disabled={this.state.undoStack.length === 0}
+                            >
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
+                                <span>Undo</span>
+                            </button>
+                            <button 
+                                className="undo-redo-btn"
+                                onClick={this.redo}
+                                title="Redo (Ctrl+Shift+Z)"
+                                disabled={this.state.redoStack.length === 0}
+                            >
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.06-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" fill="currentColor"/></svg>
+                                <span>Redo</span>
+                            </button>
+                        </div>
 
                         <button 
                             className={`play-btn-hero ${this.state.playing ? 'playing' : ''}`}
@@ -1033,6 +1043,7 @@ export class Application extends React.Component {
                                 {Array.from({ length: MAX_CHANNELS }, (_, i) => i + 1).map(ch => {
                                     const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
                                     const isMuted = settings.muted || false;
+                                    const progNum = settings.program ?? 0;
                                     return (
                                         <div key={ch}
                                             className={`channel-item ${this.state.arrowChannel === ch ? 'selected' : ''}`}
@@ -1069,7 +1080,51 @@ export class Application extends React.Component {
                                                         <span>{Math.round((settings.volume ?? 1.0) * 100)}%</span>
                                                     </button>
                                                 </div>
+                                                <button
+                                                    className="ch-prog-btn"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        this.setState({ activePopup: this.state.activePopup === `prog-${ch}` ? null : `prog-${ch}`, arrowChannel: ch });
+                                                    }}
+                                                    title={`Ch ${ch} program: ${progNum}`}
+                                                >P:{progNum}</button>
                                             </div>
+                                            {/* Inline program input popup */}
+                                            {this.state.activePopup === `prog-${ch}` && (
+                                                <div className="ch-prog-popup" onClick={(e) => e.stopPropagation()}>
+                                                    <label>Program (0-127)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="127"
+                                                        defaultValue={progNum}
+                                                        className="ch-prog-input"
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                const val = Math.max(0, Math.min(127, parseInt(e.target.value) || 0));
+                                                                const newSettings = { ...this.state.channelSettings };
+                                                                newSettings[ch] = { ...settings, program: val };
+                                                                sendProgramChange(ch, val);
+                                                                this.setState({ channelSettings: newSettings, activePopup: null });
+                                                            } else if (e.key === 'Escape') {
+                                                                this.setState({ activePopup: null });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <button
+                                                        className="ch-prog-send"
+                                                        onClick={(e) => {
+                                                            const input = e.target.closest('.ch-prog-popup').querySelector('input');
+                                                            const val = Math.max(0, Math.min(127, parseInt(input.value) || 0));
+                                                            const newSettings = { ...this.state.channelSettings };
+                                                            newSettings[ch] = { ...settings, program: val };
+                                                            sendProgramChange(ch, val);
+                                                            this.setState({ channelSettings: newSettings, activePopup: null });
+                                                        }}
+                                                    >Send</button>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1328,13 +1383,31 @@ export class Application extends React.Component {
                             <select id="midiOut" className="sel">
                                 <option value="">None</option>
                             </select>
-                            <button
-                                className="midi-rescan-btn"
-                                onClick={rescanMIDI}
-                                title="Rescan MIDI devices"
-                            >
-                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
-                            </button>
+                            {!isMidiConnected() && (
+                                <button
+                                    className="midi-help-btn"
+                                    onClick={() => this.setState({ showMidiHelp: !this.state.showMidiHelp })}
+                                    title="MIDI setup help"
+                                >
+                                    <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" fill="currentColor"/></svg>
+                                </button>
+                            )}
+                            {this.state.showMidiHelp && (
+                                <div className="midi-help-popup">
+                                    <div className="midi-help-popup-header">
+                                        <strong>Enable MIDI Access</strong>
+                                        <button className="midi-help-close" onClick={() => this.setState({ showMidiHelp: false })}>✕</button>
+                                    </div>
+                                    <ol className="midi-help-steps">
+                                        <li>Connect your MIDI device via USB</li>
+                                        <li>In Chrome, go to <strong>Settings → Privacy & Security → Site Settings</strong></li>
+                                        <li>Scroll to <strong>MIDI devices</strong> and set to <strong>Allow</strong></li>
+                                        <li>Alternatively, click the lock icon in the address bar and enable <strong>MIDI</strong></li>
+                                        <li>Reload the page — your device should appear in the dropdown</li>
+                                    </ol>
+                                    <button className="midi-help-rescan" onClick={() => this.setState({ showMidiHelp: false })}>Got It</button>
+                                </div>
+                            )}
                         </div>
                         <div className="footer-group">
                             <label>Master Vol</label>
@@ -1349,29 +1422,29 @@ export class Application extends React.Component {
 
                     {/* ── Action bar ── */}
                     <div className="action-bar">
-                        <button className="action-btn" onClick={this.saveToLocalStorage} title="Save to browser (Ctrl+S)">
-                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
-                            <span>Save</span>
-                        </button>
-                        <button className="action-btn" onClick={this.loadFromLocalStorage} title="Manage saved grids">
-                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
-                            <span>Load</span>
-                        </button>
-                        <button className="action-btn" onClick={this.exportGrid} title="Export current grid as JSON file">
-                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
-                            <span>Export</span>
-                        </button>
-                        <button className="action-btn" onClick={this.importGrid} title="Import a grid from JSON file">
-                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
-                            <span>Import</span>
-                        </button>
-                        <button className="action-btn share-btn" onClick={this.share} title="Copy a link to share this creation">
-                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor"/></svg>
-                            <span>Share This Creation</span>
-                        </button>
-                    </div>
-                    <div className="app-footer-bar">
                         <span className="footer-copyright">© {new Date().getFullYear()} Nathaniel Young</span>
+                        <div className="action-bar-buttons">
+                            <button className="action-btn" onClick={this.saveToLocalStorage} title="Save to browser (Ctrl+S)">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
+                                <span>Save</span>
+                            </button>
+                            <button className="action-btn" onClick={this.loadFromLocalStorage} title="Manage saved grids">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
+                                <span>Load</span>
+                            </button>
+                            <button className="action-btn" onClick={this.exportGrid} title="Export current grid as JSON file">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
+                                <span>Export</span>
+                            </button>
+                            <button className="action-btn" onClick={this.importGrid} title="Import a grid from JSON file">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
+                                <span>Import</span>
+                            </button>
+                            <button className="action-btn share-btn" onClick={this.share} title="Copy a link to share this creation">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor"/></svg>
+                                <span>Share</span>
+                            </button>
+                        </div>
                         <a href="https://nathaniel-young.com" target="_blank" rel="noopener noreferrer" className="footer-discover">Discover more at nathaniel-young.com</a>
                     </div>
                 </div>
@@ -1383,20 +1456,63 @@ export class Application extends React.Component {
 
                 {/* ── Intro Modal ── */}
                 {this.state.showIntro && (
-                    <div className="intro-overlay" onClick={() => { localStorage.setItem('arrowgrid-seen', '1'); this.setState({ showIntro: false }); }}>
+                    <div className="intro-overlay" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
                         <div className="intro-modal" onClick={(e) => e.stopPropagation()}>
                             <h2><span className="title-arrow">➤</span> Arrow Grid</h2>
-                            <p>An audio-visual instrument that creates rhythms and melodies from bouncing arrows.</p>
-                            <ul className="intro-steps">
-                                <li><strong>Click</strong> the grid to place arrows</li>
-                                <li><strong>Arrows</strong> move, bounce off walls, and trigger notes</li>
-                                <li><strong>Channels</strong> give each arrow a color and sound</li>
-                                <li>Use <strong>←→</strong> to browse presets, <strong>Space</strong> to play/pause</li>
-                                <li>Enable <strong>MIDI</strong> to send notes to your DAW</li>
-                            </ul>
-                            <button className="intro-close-btn" onClick={() => { localStorage.setItem('arrowgrid-seen', '1'); this.setState({ showIntro: false }); }}>
-                                Start Playing
-                            </button>
+                            <p className="intro-tagline">An audio-visual instrument that creates rhythms and melodies from bouncing arrows.</p>
+
+                            <div className="intro-steps-visual">
+                                <div className="intro-step-card" onClick={() => { const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
+                                    <div className="intro-step-icon">👆</div>
+                                    <div className="intro-step-text">
+                                        <strong>Click the grid</strong>
+                                        <span>Place arrows that move and bounce</span>
+                                    </div>
+                                </div>
+                                <div className="intro-step-card" onClick={() => { const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
+                                    <div className="intro-step-icon">
+                                        <div className="intro-play-icon">
+                                            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="white"/></svg>
+                                        </div>
+                                    </div>
+                                    <div className="intro-step-text">
+                                        <strong>Press Play</strong>
+                                        <span>Arrows trigger notes as they move</span>
+                                    </div>
+                                </div>
+                                <div className="intro-step-card" onClick={() => { const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
+                                    <div className="intro-step-icon">
+                                        <div className="intro-color-dots">
+                                            <span style={{background:'rgb(102,126,234)'}}></span>
+                                            <span style={{background:'rgb(234,102,102)'}}></span>
+                                            <span style={{background:'rgb(102,234,168)'}}></span>
+                                            <span style={{background:'rgb(234,196,102)'}}></span>
+                                        </div>
+                                    </div>
+                                    <div className="intro-step-text">
+                                        <strong>Choose Channels</strong>
+                                        <span>Each channel has its own color and sound</span>
+                                    </div>
+                                </div>
+                                <div className="intro-step-card" onClick={() => { const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
+                                    <div className="intro-step-icon">
+                                        <span className="intro-key-hint">← →</span>
+                                    </div>
+                                    <div className="intro-step-text">
+                                        <strong>Explore Presets</strong>
+                                        <span>Browse with arrow keys or the preset controls</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="intro-sound-choice">
+                                <button className="intro-close-btn sound-on" onClick={() => { localStorage.setItem('arrowgrid-seen', '1'); localStorage.setItem('arrowgrid-sound', 'on'); this.setState({ showIntro: false, soundOn: true }, () => this.play()); }}>
+                                    🔊 Start with Sound
+                                </button>
+                                <button className="intro-close-btn sound-off" onClick={() => { localStorage.setItem('arrowgrid-seen', '1'); localStorage.setItem('arrowgrid-sound', 'off'); this.setState({ showIntro: false, soundOn: false }, () => this.play()); }}>
+                                    🔇 Start without Sound
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

@@ -1,7 +1,7 @@
 export default [
   // 0 — Rainbow Spiral: arrows scattered across the grid, one per channel
   {
-    name: "Rainbow Spiral",
+    name: "Spiral",
     size: 8,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },  // blue — top-left, right
@@ -23,7 +23,7 @@ export default [
   },
   // 1 — Rainbow X: diagonal cross with all 7 channel colors
   {
-    name: "Rainbow X",
+    name: "Crossbow",
     size: 8,
     arrows: [
       { x: 0, y: 0, vector: 0, channel: 1 },
@@ -47,7 +47,7 @@ export default [
   },
   // 2 — Diamond cage: 4-fold symmetry with walls forming a diamond
   {
-    name: "Diamond Cage",
+    name: "Diamond",
     size: 8,
     arrows: [
       { x: 3, y: 1, vector: 1, channel: 1 },
@@ -73,7 +73,7 @@ export default [
   },
   // 3 — Spiral channels: concentric rotating arrows in different colors
   {
-    name: "Spiral Channels",
+    name: "Channels",
     size: 10,
     arrows: [
       // Outer ring — blue ch1
@@ -110,7 +110,7 @@ export default [
   },
   // 4 — Walled corridors: arrows bounce through maze-like walls
   {
-    name: "Walled Corridors",
+    name: "Corridors",
     size: 8,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },
@@ -137,7 +137,7 @@ export default [
   },
   // 5 — Color pinwheel: rotational symmetry with 4 color arms
   {
-    name: "Color Pinwheel",
+    name: "Pinwheel",
     size: 9,
     arrows: [
       // Arm 1 — up (blue)
@@ -169,7 +169,7 @@ export default [
   },
   // 6 — Cascading steps: staircase pattern with alternating channel colors
   {
-    name: "Cascading Steps",
+    name: "Cascade",
     size: 12,
     arrows: [
       { x: 0, y: 0, vector: 1, channel: 1 },
@@ -207,7 +207,7 @@ export default [
   },
   // 7 — Mirror hall: horizontal + vertical symmetry with walls creating halls
   {
-    name: "Mirror Hall",
+    name: "Mirror",
     size: 10,
     arrows: [
       // Top-left quadrant
@@ -330,7 +330,7 @@ export default [
   },
   // 10 — Diagonal weave: forward-diagonal symmetry with alternating colors
   {
-    name: "Diagonal Weave",
+    name: "Weave",
     size: 13,
     arrows: [
       { x: 0, y: 12, vector: 2, channel: 1 },
@@ -406,7 +406,7 @@ export default [
   },
   // 12 — Color fountain: center burst with walls channeling outward
   {
-    name: "Color Fountain",
+    name: "Fountain",
     size: 10,
     arrows: [
       { x: 4, y: 4, vector: 0, channel: 1 },

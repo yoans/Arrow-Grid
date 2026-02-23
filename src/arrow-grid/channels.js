@@ -63,6 +63,8 @@ export const DEFAULT_CHANNEL_SETTINGS = {
     volume: 1.0,        // 0.0–1.0
     midiChannel: null,   // MIDI channel (1-16), null = same as channel id
     muted: false,        // whether this channel is muted
+    program: 0,          // MIDI program number (0-127), 0 = Acoustic Grand Piano
+    synthType: 'default', // browser synth type (for future per-channel synth config)
 };
 
 /**
