@@ -157,6 +157,9 @@ export class Application extends React.Component {
             saveNameInput: '',
             showInfo: false,
             showMidiHelp: false,
+            progModalSnapshot: null,  // snapshot of channel settings when FX modal opens
+            progInputText: '0',       // custom text input for program number
+            progCloseConfirm: false,  // show close confirmation warning
         };
     }
 
@@ -224,7 +227,10 @@ export class Application extends React.Component {
     _resizeTimer = null;
 
     _closeVolumePopup = (e) => {
-        if (this.state.activePopup !== null && !e.target.closest('.popup-trigger-wrap')) {
+        if (this.state.activePopup !== null
+            && !e.target.closest('.popup-trigger-wrap')
+            && !e.target.closest('.prog-modal-overlay')
+            && !e.target.closest('.prog-modal')) {
             this.setState({ activePopup: null });
         }
     };
@@ -973,9 +979,12 @@ export class Application extends React.Component {
                                         '--ch-b': CHANNEL_COLORS[this.state.activePopup]?.[2] ?? 234,
                                     } : undefined}
                                 >
-                                    <span className="slider-overlay-title">
-                                        {this.state.activePopup === 'speed' ? 'Speed' : this.state.activePopup === 'gridSize' ? 'Grid Size' : `Ch${this.state.activePopup} Vol`}
-                                    </span>
+                                    <div className="slider-overlay-header">
+                                        <button className="slider-overlay-back" onClick={() => this.setState({ activePopup: null })} title="Back">‹</button>
+                                        <span className="slider-overlay-title">
+                                            {this.state.activePopup === 'speed' ? 'Speed' : this.state.activePopup === 'gridSize' ? 'Grid Size' : `Ch${this.state.activePopup} Vol`}
+                                        </span>
+                                    </div>
                                     <span className="slider-overlay-val">
                                         {this.state.activePopup === 'speed'
                                             ? `${Math.round(60000 / this.state.noteLength)} bpm`
@@ -1010,7 +1019,7 @@ export class Application extends React.Component {
                                             }
                                         }}
                                     />
-                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                    <button className="slider-overlay-done" onClick={() => this.setState({ activePopup: null })}>Done</button>
                                 </div>
                             )}
 
@@ -1044,91 +1053,256 @@ export class Application extends React.Component {
                                     const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
                                     const isMuted = settings.muted || false;
                                     const progNum = settings.program ?? 0;
+                                    const volPct = Math.round((settings.volume ?? 1.0) * 100);
+                                    const iconKey = settings.icon || 'piano';
+                                    const ICON_MAP = {
+                                        piano: '🎹', guitar: '🎸', bass: '🪕', drums: '🥁', trumpet: '🎺',
+                                        sax: '🎷', violin: '🎻', flute: '🪈', pad: '🌊',
+                                        lead: '⚡', organ: '🪗', bell: '🔔', voice: '🎤', fx: '✨',
+                                        square: '⏹', saw: '◮', sine: '〰', noise: '▒',
+                                    };
+                                    const iconChar = ICON_MAP[iconKey] || '🎹';
                                     return (
-                                        <div key={ch}
-                                            className={`channel-item ${this.state.arrowChannel === ch ? 'selected' : ''}`}
-                                            onClick={() => this.setState({ arrowChannel: ch })}
-                                        >
-                                            <div className={`channel-box ${CHANNEL_CSS_CLASSES[ch]} ${this.state.arrowChannel === ch ? 'active' : ''} ${isMuted ? 'muted' : ''}`}>
-                                                <span className="ch-label-inline">Ch{ch}</span>
+                                        <div key={ch} className={`channel-item`}>
+                                            <div className={`channel-box ${isMuted ? 'muted' : ''}`}
+                                                style={{ '--ch-color': `rgb(${(CHANNEL_COLORS[ch] || CHANNEL_COLORS[1]).join(',')})` }}
+                                            >
                                                 <button
-                                                    className={`ch-mute-btn-inline ${isMuted ? 'muted' : ''}`}
+                                                    className={`ch-num-btn ${CHANNEL_CSS_CLASSES[ch]} ${this.state.arrowChannel === ch ? 'active' : ''}`}
+                                                    onClick={() => this.setState({ arrowChannel: ch })}
+                                                    title={`Select Channel ${ch}`}
+                                                >{ch}</button>
+                                                <button
+                                                    className={`ch-ctrl-btn ${isMuted ? 'off' : 'on'}`}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         const newSettings = { ...this.state.channelSettings };
                                                         newSettings[ch] = { ...settings, muted: !isMuted };
-                                                        this.setState({ arrowChannel: ch, channelSettings: newSettings });
+                                                        this.setState({ channelSettings: newSettings });
                                                     }}
                                                     title={isMuted ? `Unmute Ch ${ch}` : `Mute Ch ${ch}`}
-                                                >
-                                                    {isMuted ? (
-                                                        <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" strokeWidth="2"/></svg>
-                                                    ) : (
-                                                        <svg viewBox="0 0 24 24" width="10" height="10"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2"/><path d="M7 12.5l3 3 7-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                                    )}
-                                                </button>
-                                                <div className="ch-vol-wrap popup-trigger-wrap">
-                                                    <button
-                                                        className="ch-vol-btn"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            this.setState({ activePopup: this.state.activePopup === ch ? null : ch, arrowChannel: ch });
-                                                        }}
-                                                        title={`Ch ${ch} volume: ${Math.round((settings.volume ?? 1.0) * 100)}%`}
-                                                    >
-                                                        <svg viewBox="0 0 24 24" width="10" height="10"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
-                                                        <span>{Math.round((settings.volume ?? 1.0) * 100)}%</span>
-                                                    </button>
-                                                </div>
+                                                >{isMuted ? 'OFF' : 'ON'}</button>
                                                 <button
-                                                    className="ch-prog-btn"
+                                                    className="ch-ctrl-btn ch-vol-fixed popup-trigger-wrap"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        this.setState({ activePopup: this.state.activePopup === `prog-${ch}` ? null : `prog-${ch}`, arrowChannel: ch });
+                                                        this.setState({ activePopup: this.state.activePopup === ch ? null : ch });
                                                     }}
-                                                    title={`Ch ${ch} program: ${progNum}`}
-                                                >P:{progNum}</button>
+                                                    title={`Ch ${ch} volume: ${volPct}%`}
+                                                >{volPct}%</button>
+                                                <button
+                                                    className="ch-ctrl-btn ch-fx-btn"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const isOpen = this.state.activePopup === `prog-${ch}`;
+                                                        if (isOpen) {
+                                                            this.setState({ activePopup: null, progModalSnapshot: null, progCloseConfirm: false });
+                                                        } else {
+                                                            this.setState({
+                                                                activePopup: `prog-${ch}`,
+                                                                progModalSnapshot: { ...settings },
+                                                                progInputText: String(settings.program ?? 0),
+                                                                progCloseConfirm: false,
+                                                            });
+                                                        }
+                                                    }}
+                                                    title={`Ch ${ch} sound — Program ${progNum}`}
+                                                ><span className="ch-fx-icon">{iconChar}</span></button>
                                             </div>
-                                            {/* Inline program input popup */}
-                                            {this.state.activePopup === `prog-${ch}` && (
-                                                <div className="ch-prog-popup" onClick={(e) => e.stopPropagation()}>
-                                                    <label>Program (0-127)</label>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="127"
-                                                        defaultValue={progNum}
-                                                        className="ch-prog-input"
-                                                        autoFocus
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                const val = Math.max(0, Math.min(127, parseInt(e.target.value) || 0));
-                                                                const newSettings = { ...this.state.channelSettings };
-                                                                newSettings[ch] = { ...settings, program: val };
-                                                                sendProgramChange(ch, val);
-                                                                this.setState({ channelSettings: newSettings, activePopup: null });
-                                                            } else if (e.key === 'Escape') {
-                                                                this.setState({ activePopup: null });
-                                                            }
-                                                        }}
-                                                    />
-                                                    <button
-                                                        className="ch-prog-send"
-                                                        onClick={(e) => {
-                                                            const input = e.target.closest('.ch-prog-popup').querySelector('input');
-                                                            const val = Math.max(0, Math.min(127, parseInt(input.value) || 0));
-                                                            const newSettings = { ...this.state.channelSettings };
-                                                            newSettings[ch] = { ...settings, program: val };
-                                                            sendProgramChange(ch, val);
-                                                            this.setState({ channelSettings: newSettings, activePopup: null });
-                                                        }}
-                                                    >Send</button>
-                                                </div>
-                                            )}
                                         </div>
                                     );
                                 })}
                             </div>
+                            {/* Program / Sound Selection modal */}
+                            {typeof this.state.activePopup === 'string' && this.state.activePopup.startsWith('prog-') && (() => {
+                                const ch = parseInt(this.state.activePopup.split('-')[1]);
+                                const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
+                                const progNum = settings.program ?? 0;
+                                const iconKey = settings.icon || 'piano';
+                                const snapshot = this.state.progModalSnapshot;
+                                const hasChanges = snapshot && (
+                                    snapshot.program !== settings.program ||
+                                    snapshot.icon !== (settings.icon || 'piano') ||
+                                    snapshot.synthType !== (settings.synthType || 'default')
+                                );
+                                const ICONS = [
+                                    ['piano', '🎹', 'Piano'],
+                                    ['guitar', '🎸', 'Guitar'],
+                                    ['bass', '🪕', 'Bass'],
+                                    ['drums', '🥁', 'Drums'],
+                                    ['trumpet', '🎺', 'Trumpet'],
+                                    ['sax', '🎷', 'Sax'],
+                                    ['violin', '🎻', 'Violin'],
+                                    ['flute', '🪈', 'Flute'],
+                                    ['pad', '🌊', 'Pad'],
+                                    ['lead', '⚡', 'Lead'],
+                                    ['organ', '🪗', 'Organ'],
+                                    ['bell', '🔔', 'Bell'],
+                                    ['voice', '🎤', 'Voice'],
+                                    ['fx', '✨', 'FX'],
+                                    ['square', '⏹', 'Square'],
+                                    ['saw', '◮', 'Saw'],
+                                    ['sine', '〰', 'Sine'],
+                                    ['noise', '▒', 'Noise'],
+                                ];
+                                const QUICK_SYNTHS = [
+                                    ['default', 'Default'],
+                                    ['am', 'AM Synth'],
+                                    ['fm', 'FM Synth'],
+                                    ['membrane', 'Membrane'],
+                                    ['metal', 'Metallic'],
+                                    ['pluck', 'Pluck'],
+                                    ['mono', 'Mono Synth'],
+                                    ['duo', 'Duo Synth'],
+                                ];
+                                const sendProg = (val) => {
+                                    const clamped = Math.max(0, Math.min(127, val));
+                                    const newSettings = { ...this.state.channelSettings };
+                                    newSettings[ch] = { ...settings, program: clamped };
+                                    sendProgramChange(ch, clamped);
+                                    this.setState({ channelSettings: newSettings, progInputText: String(clamped) });
+                                };
+                                const applyInputText = () => {
+                                    const val = parseInt(this.state.progInputText);
+                                    if (!isNaN(val)) sendProg(val);
+                                    else this.setState({ progInputText: String(progNum) });
+                                };
+                                const closeOk = () => {
+                                    this.setState({ activePopup: null, progModalSnapshot: null, progCloseConfirm: false });
+                                };
+                                const closeCancel = () => {
+                                    if (snapshot) {
+                                        const newSettings = { ...this.state.channelSettings };
+                                        newSettings[ch] = { ...snapshot };
+                                        if (snapshot.program !== settings.program) sendProgramChange(ch, snapshot.program);
+                                        this.setState({ channelSettings: newSettings, activePopup: null, progModalSnapshot: null, progCloseConfirm: false });
+                                    } else {
+                                        this.setState({ activePopup: null, progModalSnapshot: null, progCloseConfirm: false });
+                                    }
+                                };
+                                const closeX = () => {
+                                    if (hasChanges && !this.state.progCloseConfirm) {
+                                        this.setState({ progCloseConfirm: true });
+                                    } else {
+                                        closeOk();
+                                    }
+                                };
+                                return (
+                                    <div className="prog-modal-overlay" onClick={closeX} onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
+                                        <div className="prog-modal" onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                                '--ch-color': `rgb(${(CHANNEL_COLORS[ch] || CHANNEL_COLORS[1]).join(',')})`,
+                                                '--ch-color-glow': `rgba(${(CHANNEL_COLORS[ch] || CHANNEL_COLORS[1]).join(',')}, 0.4)`,
+                                            }}
+                                        >
+                                            <div className="prog-modal-header">
+                                                <strong>Channel {ch} — Program / Sound Selection</strong>
+                                                <button className="prog-modal-close" onClick={closeX} title="Close">✕</button>
+                                            </div>
+
+                                            {/* Section: Icon Selection (above group labels) */}
+                                            <div className="prog-section">
+                                                <div className="prog-section-label">Icon</div>
+                                                <div className="prog-icon-grid">
+                                                    {ICONS.map(([key, emoji, label]) => (
+                                                        <button
+                                                            key={key}
+                                                            className={`prog-icon-btn ${iconKey === key ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                const newSettings = { ...this.state.channelSettings };
+                                                                newSettings[ch] = { ...settings, icon: key };
+                                                                this.setState({ channelSettings: newSettings });
+                                                            }}
+                                                            title={label}
+                                                        ><span className="icon-glyph">{emoji}</span></button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* ── Local Synth ── */}
+                                            <div className="prog-group-label">🔊 Local Synth</div>
+
+                                            {/* Section 2: Custom Browser Synth (TODO) */}
+                                            <div className="prog-section">
+                                                <div className="prog-section-label">Custom Browser Synth</div>
+                                                <div className="prog-synth-grid">
+                                                    {QUICK_SYNTHS.map(([key, label]) => (
+                                                        <button
+                                                            key={key}
+                                                            className={`prog-preset-btn ${(settings.synthType || 'default') === key ? 'active' : ''}`}
+                                                            onClick={() => {
+                                                                const newSettings = { ...this.state.channelSettings };
+                                                                newSettings[ch] = { ...settings, synthType: key };
+                                                                this.setState({ channelSettings: newSettings });
+                                                            }}
+                                                        >{label}</button>
+                                                    ))}
+                                                </div>
+                                                <p className="prog-section-hint">Per-channel synth engine — coming soon</p>
+                                            </div>
+
+                                            {/* ── External MIDI ── */}
+                                            <div className="prog-group-label">🎹 External MIDI</div>
+
+                                            {/* Section 3: MIDI Program Selection */}
+                                            <div className="prog-section">
+                                                <div className="prog-section-label">MIDI Program</div>
+                                                <p className="prog-section-hint">Select a sound or set a sound on a remote / USB-connected MIDI device</p>
+                                                <div className="prog-modal-input-row">
+                                                    <button
+                                                        className="prog-inc-btn"
+                                                        onClick={() => sendProg(progNum - 1)}
+                                                        disabled={progNum <= 0}
+                                                        title="Previous program"
+                                                    >◀</button>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        value={this.state.progInputText}
+                                                        className="prog-modal-input"
+                                                        onChange={(e) => {
+                                                            const v = e.target.value;
+                                                            if (v === '' || /^\d{0,3}$/.test(v)) {
+                                                                this.setState({ progInputText: v });
+                                                            }
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') applyInputText();
+                                                            else if (e.key === 'Escape') closeX();
+                                                        }}
+                                                        onBlur={() => applyInputText()}
+                                                    />
+                                                    <button
+                                                        className="prog-inc-btn"
+                                                        onClick={() => sendProg(progNum + 1)}
+                                                        disabled={progNum >= 127}
+                                                        title="Next program"
+                                                    >▶</button>
+                                                </div>
+                                            </div>
+
+                                            {/* Close confirmation popup */}
+                                            {this.state.progCloseConfirm && (
+                                                <div className="prog-confirm-overlay" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="prog-confirm-popup">
+                                                        <div className="prog-confirm-msg">⚠ Unsaved changes will be lost</div>
+                                                        <div className="prog-confirm-actions">
+                                                            <button className="prog-confirm-discard" onClick={closeOk}>Discard</button>
+                                                            <button className="prog-confirm-stay" onClick={() => this.setState({ progCloseConfirm: false })}>Stay</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Footer: OK / Cancel */}
+                                            <div className="prog-modal-footer">
+                                                <button className="prog-footer-btn prog-btn-cancel" onClick={closeCancel} title="Revert all changes and close">Cancel</button>
+                                                <button className="prog-footer-btn prog-btn-ok" onClick={closeOk} title="Keep changes and close">OK</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* ── CENTER CANVAS ── */}
@@ -1141,7 +1315,10 @@ export class Application extends React.Component {
                             {/* Slider overlay for right panel */}
                             {(this.state.activePopup === 'arrowVol' || this.state.activePopup === 'masterVol') && (
                                 <div className="slider-overlay popup-trigger-wrap" onClick={(e) => e.stopPropagation()}>
-                                    <span className="slider-overlay-title">{this.state.activePopup === 'arrowVol' ? 'Arrow Volume' : 'Master Volume'}</span>
+                                    <div className="slider-overlay-header">
+                                        <button className="slider-overlay-back" onClick={() => this.setState({ activePopup: null })} title="Back">‹</button>
+                                        <span className="slider-overlay-title">{this.state.activePopup === 'arrowVol' ? 'Arrow Volume' : 'Master Volume'}</span>
+                                    </div>
                                     <span className="slider-overlay-val">
                                         {this.state.activePopup === 'arrowVol'
                                             ? `${Math.round(this.state.inputVelocity * 100)}%`
@@ -1166,13 +1343,16 @@ export class Application extends React.Component {
                                             }
                                         }}
                                     />
-                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                    <button className="slider-overlay-done" onClick={() => this.setState({ activePopup: null })}>Done</button>
                                 </div>
                             )}
                             {/* Channel select overlay */}
                             {this.state.activePopup === 'chSelect' && (
                                 <div className="slider-overlay ch-select-overlay popup-trigger-wrap" onClick={(e) => e.stopPropagation()}>
-                                    <span className="slider-overlay-title">Select Channel</span>
+                                    <div className="slider-overlay-header">
+                                        <button className="slider-overlay-back" onClick={() => this.setState({ activePopup: null })} title="Back">‹</button>
+                                        <span className="slider-overlay-title">Select Channel</span>
+                                    </div>
                                     <div className="ch-select-grid">
                                         {Array.from({length: MAX_CHANNELS}, (_, i) => i + 1).map(ch => (
                                             <button
@@ -1183,7 +1363,7 @@ export class Application extends React.Component {
                                             >{ch}</button>
                                         ))}
                                     </div>
-                                    <button className="slider-overlay-close" onClick={() => this.setState({ activePopup: null })}>✕</button>
+                                    <button className="slider-overlay-done" onClick={() => this.setState({ activePopup: null })}>Done</button>
                                 </div>
                             )}
                             {/* Draw Tools */}
@@ -1224,7 +1404,7 @@ export class Application extends React.Component {
                                         <span className="tool-label">channel</span>
                                         <button
                                             className="ch-select-btn popup-trigger-wrap"
-                                            onClick={(e) => { e.stopPropagation(); this.setState({ activePopup: this.state.activePopup === 'chSelect' ? null : 'chSelect' }); }}
+                                            onClick={(e) => { e.stopPropagation(); this.setState({ activePopup: this.state.activePopup === 'chSelect' ? null : 'chSelect', drawMode: 'arrow', deleting: false }); }}
                                             style={{background: `rgb(${CHANNEL_COLORS[this.state.arrowChannel].join(',')})`}}
                                             title={`Channel ${this.state.arrowChannel}`}
                                         >Ch{this.state.arrowChannel}</button>
@@ -1321,25 +1501,30 @@ export class Application extends React.Component {
                                         </button>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Symmetry */}
-                            <div className="panel-group">
-                                <h3>Symmetry</h3>
-                                <div className="sym-grid">
-                                    <button className={`tool-btn ${this.state.verticalSymmetry ? 'active' : ''}`} onClick={() => this.setState({verticalSymmetry: !this.state.verticalSymmetry})} title="Vertical (1)">
-                                        <svg viewBox="0 0 24 24" width="16" height="16"><line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                                    </button>
-                                    <button className={`tool-btn ${this.state.horizontalSymmetry ? 'active' : ''}`} onClick={() => this.setState({horizontalSymmetry: !this.state.horizontalSymmetry})} title="Horizontal (2)">
-                                        <svg viewBox="0 0 24 24" width="16" height="16"><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                                    </button>
-                                    <button className={`tool-btn ${this.state.forwardDiagonalSymmetry ? 'active' : ''}`} onClick={() => this.setState({forwardDiagonalSymmetry: !this.state.forwardDiagonalSymmetry})} title="Diagonal / (3)">
-                                        <svg viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                                    </button>
-                                    <button className={`tool-btn ${this.state.backwardDiagonalSymmetry ? 'active' : ''}`} onClick={() => this.setState({backwardDiagonalSymmetry: !this.state.backwardDiagonalSymmetry})} title="Diagonal \ (4)">
-                                        <svg viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                                    </button>
-                                </div>
+                                {/* ── Symmetry (inside Draw section) ── */}
+                                {(() => {
+                                    const anySym = this.state.verticalSymmetry || this.state.horizontalSymmetry || this.state.forwardDiagonalSymmetry || this.state.backwardDiagonalSymmetry;
+                                    return (
+                                        <div className={`draw-tool-group ${anySym ? 'active-section' : 'inactive-section'}`}>
+                                            <span className="group-label">Symmetry</span>
+                                            <div className="sym-grid">
+                                                <button className={`tool-btn ${this.state.verticalSymmetry ? 'active' : ''}`} onClick={() => this.setState({verticalSymmetry: !this.state.verticalSymmetry})} title="Vertical (1)">
+                                                    <svg viewBox="0 0 24 24" width="16" height="16"><line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                                                </button>
+                                                <button className={`tool-btn ${this.state.horizontalSymmetry ? 'active' : ''}`} onClick={() => this.setState({horizontalSymmetry: !this.state.horizontalSymmetry})} title="Horizontal (2)">
+                                                    <svg viewBox="0 0 24 24" width="16" height="16"><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                                                </button>
+                                                <button className={`tool-btn ${this.state.forwardDiagonalSymmetry ? 'active' : ''}`} onClick={() => this.setState({forwardDiagonalSymmetry: !this.state.forwardDiagonalSymmetry})} title="Diagonal / (3)">
+                                                    <svg viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                                                </button>
+                                                <button className={`tool-btn ${this.state.backwardDiagonalSymmetry ? 'active' : ''}`} onClick={() => this.setState({backwardDiagonalSymmetry: !this.state.backwardDiagonalSymmetry})} title="Diagonal \ (4)">
+                                                    <svg viewBox="0 0 24 24" width="16" height="16"><line x1="5" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>

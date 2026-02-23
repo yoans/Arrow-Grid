@@ -65,6 +65,7 @@ export const DEFAULT_CHANNEL_SETTINGS = {
     muted: false,        // whether this channel is muted
     program: 0,          // MIDI program number (0-127), 0 = Acoustic Grand Piano
     synthType: 'default', // browser synth type (for future per-channel synth config)
+    icon: 'piano',       // mnemonic icon key for quick visual reference
 };
 
 /**
