@@ -123,8 +123,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 130px;
+  width: 116px;
   flex-shrink: 0;
+  margin-right: 5px;
 }
 
 /* Panel groups */
@@ -341,46 +342,31 @@ body {
   line-height: 1;
 }
 
-/* Draw mode toggle (Draw / Erase) — pill-shaped segmented control */
-.draw-mode-toggle {
-  display: flex;
-  width: 100%;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
+/* Draw panel active highlight */
+.draw-panel.draw-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(102,126,234,0.15);
 }
-.draw-mode-toggle .mode-btn {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 32px;
-  padding: 0 6px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.7em;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-.draw-mode-toggle .mode-btn:first-child {
-  border-right: 1px solid var(--border-subtle);
-}
-.draw-mode-toggle .mode-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.draw-mode-toggle .mode-btn.active {
+.draw-panel.draw-active h3 {
   color: var(--accent);
-  background: var(--accent-glow);
 }
-.draw-mode-toggle .mode-btn.erasing {
-  color: var(--danger);
-  background: rgba(248,113,113,0.1);
+
+/* Erase panel */
+.erase-panel {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.erase-panel-active {
+  border-color: #e74c3c;
+  box-shadow: 0 0 12px rgba(231, 76, 60, 0.2);
+}
+.erase-panel-active h3 {
+  color: #e74c3c;
+}
+.erase-panel .erase-grid .tool-btn.active {
+  background: rgba(231, 76, 60, 0.12);
+  border-color: #e74c3c;
+  color: #e74c3c;
 }
 
 /* Draw type selector (Arrow / Wall) */
@@ -589,9 +575,11 @@ body {
 .channel-row {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   width: 100%;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .channel-header {
   display: flex;
@@ -613,6 +601,7 @@ body {
   cursor: pointer;
   border-radius: var(--r-sm);
   transition: all 0.12s ease;
+  flex: 1;
 }
 .channel-item:last-child {
   border-bottom: none;
@@ -621,16 +610,17 @@ body {
 .channel-box {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 5px;
+  gap: 3px;
+  padding: 1px 4px;
   border-radius: var(--r-sm);
   border: none;
   background: transparent;
   transition: all 0.12s ease;
-  min-height: 30px;               /* ROW HEIGHT — adjust here */
+  min-height: 26px;               /* ROW HEIGHT — adjust here */
+  flex: 1;
 }
 .channel-box:hover {
-  filter: brightness(1.1);
+  /* no hover effect on row */
 }
 .channel-box.muted {
   opacity: 0.45;
@@ -651,7 +641,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   padding: 0 3px;
-  line-height: 1;
+  line-height: 22px;
   flex: 1;
   user-select: none;
   transition: all 0.12s;
@@ -659,9 +649,7 @@ body {
   white-space: nowrap;
 }
 .ch-ctrl-btn:hover {
-  background: rgba(255,255,255,0.22);
-  border-color: rgba(255,255,255,0.3);
-  color: rgba(255,255,255,0.95);
+  border-color: rgba(255,255,255,0.18);
 }
 .ch-ctrl-btn.on {
   background: rgba(255,255,255,0.08);
@@ -802,6 +790,8 @@ body {
   font-weight: 800;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  width: 100%;
 }
 .slider-overlay[style] .slider-overlay-val {
   color: rgb(var(--ch-r), var(--ch-g), var(--ch-b));
@@ -875,7 +865,7 @@ body {
   justify-content: center;
   width: 22px;
   min-width: 22px;
-  height: 20px;
+  height: 22px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.15);
   border-radius: 3px;
@@ -890,9 +880,7 @@ body {
   margin-right: 2px;
 }
 .ch-num-btn:hover {
-  background: rgba(255,255,255,0.18);
-  border-color: rgba(255,255,255,0.35);
-  color: rgba(255,255,255,0.95);
+  border-color: rgba(255,255,255,0.25);
 }
 /* Channel color outlines for number button */
 .ch-num-btn.ch-blue    { border-color: rgb(102,126,234); color: rgb(102,126,234); }
@@ -940,23 +928,26 @@ body {
   min-width: 22px;
   max-width: 28px;
   padding: 0;
-}
-.ch-fx-icon {
-  font-size: 1.5em;              /* ICON SIZE in channel strip — adjust here */
-  line-height: 1;
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  isolation: isolate;
 }
-/* Color overlay: forces ALL emoji to channel color hue */
-.ch-fx-icon::after {
+/* Color overlay on entire FX button */
+.ch-fx-btn::after {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: 0;
   background: var(--ch-color, var(--text-secondary));
   mix-blend-mode: color;
   pointer-events: none;
+  border-radius: inherit;
+}
+.ch-fx-icon {
+  font-size: 1.1em;              /* ICON SIZE in channel strip — adjust here */
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Channel box color is gone — num button carries the color now */
@@ -972,24 +963,54 @@ body {
 .sym-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  width: 100%;
+}
+.sym-grid .tool-btn {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+}
+
+/* Erase section */
+.erase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   width: 100%;
 }
-.sym-grid .tool-btn { width:100%; }
+.erase-grid .tool-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 0.65em;
+  font-weight: 600;
+}
+.erase-grid .tool-btn.wide {
+  grid-column: 1 / -1;
+}
+
 
 /* ── FOOTER ── */
 .console-footer {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
 }
 .footer-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 4px 10px;
 }
 .footer-group label {
   font-size: 0.65em;
@@ -999,17 +1020,93 @@ body {
   font-weight: 600;
 }
 .sel {
-  background: var(--bg-elevated);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--bg-card);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.45)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
   color: var(--text-primary);
-  padding: 5px 8px;
+  padding: 5px 24px 5px 8px;
   font-size: 0.78em;
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s;
+  font-family: inherit;
 }
 .sel:hover, .sel:focus { border-color: var(--accent); }
+
+/* ── Key Nudge Buttons ── */
+.key-nudge-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 0.55em;
+  padding: 2px 5px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.key-nudge-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.key-nudge-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ── Grid Note Labels ── */
+.grid-label-wrapper {
+  position: relative;
+}
+.grid-labels {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+.grid-labels-top {
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 14px;
+}
+.grid-labels-left {
+  right: 100%;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+}
+.grid-labels-top .grid-note-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.7em;
+  color: var(--text-muted);
+  opacity: 0.55;
+  white-space: nowrap;
+  text-align: center;
+  letter-spacing: -0.02em;
+  font-family: var(--font);
+}
+.grid-labels-left .grid-note-label {
+  position: absolute;
+  right: 3px;
+  transform: translateY(-50%);
+  font-size: 0.7em;
+  color: var(--text-muted);
+  opacity: 0.55;
+  white-space: nowrap;
+  text-align: right;
+  letter-spacing: -0.02em;
+  font-family: var(--font);
+}
 
 .midi-help-btn {
   background: var(--bg-elevated);
@@ -1214,10 +1311,10 @@ body {
   box-shadow: 0 0 8px var(--ch-color-glow, var(--accent-glow));
 }
 .prog-icon-btn.active::after {
-  display: none;
+  /* keep color overlay visible */
 }
 .prog-icon-btn.active .icon-glyph {
-  filter: brightness(0);          /* Forces ALL icons solid black when selected */
+  filter: brightness(1.5) saturate(0.5);  /* Brightens icon to stand out on colored bg */
 }
 
 /* Synth grid */
@@ -1225,6 +1322,17 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+/* Synth select row — dropdown with arrows */
+.prog-synth-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.prog-synth-sel {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Program input row with increment buttons */
@@ -1438,13 +1546,9 @@ body {
   }
 
   .side-panel {
-    overflow-y: auto;
+    overflow: hidden;
     max-height: 100%;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-subtle) transparent;
   }
-  .side-panel::-webkit-scrollbar { width: 4px; }
-  .side-panel::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
 }
 
 /* ── Portrait / narrow — comprehensive mobile layout ── */
@@ -2018,20 +2122,24 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 4px 8px 2px;
+  gap: 2px;
+  padding: 6px 12px 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   color: var(--text-secondary);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 48px;
+  min-height: 44px;
   justify-content: center;
 }
+.undo-redo-btn svg {
+  width: 18px;
+  height: 18px;
+}
 .undo-redo-btn span {
-  font-size: 0.55em;
+  font-size: 0.6em;
   line-height: 1;
   color: var(--text-muted);
 }
@@ -2055,12 +2163,19 @@ input:focus-visible {
 /* ── Scale optgroup styling ── */
 select.sel optgroup {
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   font-style: normal;
+  background: #1a1a2e;
 }
 select.sel option {
   font-weight: 400;
-  padding-left: 8px;
+  padding: 4px 8px;
+  background: #12121f;
+  color: #fff;
+}
+select.sel option:checked {
+  background: #667eea;
+  color: #fff;
 }
 
 /* ── Save Manager Modal ── */
@@ -2242,10 +2357,19 @@ select.sel option {
 /* Save manager footer */
 .save-manager-footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border-subtle);
   justify-content: center;
+}
+.save-manager-tip {
+  width: 100%;
+  text-align: center;
+  font-size: 0.7em;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+  line-height: 1.4;
 }
 .save-manager-action-btn {
   display: inline-flex;
@@ -2274,14 +2398,25 @@ select.sel option {
   white-space: nowrap;
 }
 .footer-discover {
-  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  color: var(--text-secondary);
+  font-size: 0.75em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
   text-decoration: none;
-  font-size: 0.6em;
   white-space: nowrap;
-  transition: color 0.15s;
 }
 .footer-discover:hover {
-  color: var(--accent);
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
 }
 
 /* ── Info Modal ── */

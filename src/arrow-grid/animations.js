@@ -236,12 +236,17 @@ export const setUpCanvas = (state) => {
                 if (fromTouch && !mouseIsPressed) return;
                 if (!mouseIsInSketch()) return;
                 if (stateDrawing.deleting) {
-                    // Erase mode: remove arrows at cell AND remove closest wall
-                    const mouseXindex = convertPixelToIndex(mouseX);
-                    const mouseYindex = convertPixelToIndex(mouseY);
-                    thisArrowAdder(mouseXindex, mouseYindex, e, true);
-                    const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
-                    if (wallKey) thisWallRemover(wallKey);
+                    // Erase mode: remove based on eraseTarget
+                    const target = stateDrawing.eraseTarget || 'both';
+                    if (target === 'arrows' || target === 'both') {
+                        const mouseXindex = convertPixelToIndex(mouseX);
+                        const mouseYindex = convertPixelToIndex(mouseY);
+                        thisArrowAdder(mouseXindex, mouseYindex, e, true);
+                    }
+                    if (target === 'walls' || target === 'both') {
+                        const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                        if (wallKey) thisWallRemover(wallKey);
+                    }
                 } else if (stateDrawing.drawMode === 'wall') {
                     if (!stateDrawing.wallClosest && stateDrawing.wallSides && stateDrawing.wallSides.size > 0) {
                         // Specific side(s) mode: place walls on all selected sides of the clicked cell
@@ -285,16 +290,21 @@ export const setUpCanvas = (state) => {
                 
                 if(mouseIsPressed && mouseIsInSketch()){
                     if (stateDrawing.deleting) {
-                        // Erase mode on drag: remove arrows AND closest wall
-                        if (!sameAsStart()) {
-                            const mouseXindex = convertPixelToIndex(mouseX);
-                            const mouseYindex = convertPixelToIndex(mouseY);
-                            thisArrowAdder(mouseXindex, mouseYindex, e);
+                        // Erase mode on drag: remove based on eraseTarget
+                        const target = stateDrawing.eraseTarget || 'both';
+                        if (target === 'arrows' || target === 'both') {
+                            if (!sameAsStart()) {
+                                const mouseXindex = convertPixelToIndex(mouseX);
+                                const mouseYindex = convertPixelToIndex(mouseY);
+                                thisArrowAdder(mouseXindex, mouseYindex, e);
+                            }
                         }
-                        const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
-                        if (wallKey && wallKey !== lastDragWall) {
-                            lastDragWall = wallKey;
-                            thisWallRemover(wallKey);
+                        if (target === 'walls' || target === 'both') {
+                            const wallKey = nearestWallEdge(mouseX, mouseY, stateDrawing.grid.size);
+                            if (wallKey && wallKey !== lastDragWall) {
+                                lastDragWall = wallKey;
+                                thisWallRemover(wallKey);
+                            }
                         }
                         if (e.preventDefault) e.preventDefault();
                     } else if (stateDrawing.drawMode === 'wall') {

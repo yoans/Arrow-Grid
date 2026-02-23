@@ -111,6 +111,7 @@ export class Application extends React.Component {
             soundOn: localStorage.getItem('arrowgrid-sound') === 'on',
             midiOn: false,
             deleting: false,
+            eraseTarget: 'both', // 'arrows', 'walls', or 'both'
             drawMode: 'arrow',  // 'arrow' or 'wall'
             wallSides: new Set(),  // multi-select: 'top','bottom','left','right'
             wallClosest: true,     // 'closest' mode (mutually exclusive with sides)
@@ -248,7 +249,7 @@ export class Application extends React.Component {
         } else {
             // Landscape: canvas height = viewport height minus header/footer/padding
             const chrome = 220; // header + footer + gaps + wrapper padding
-            const sidePanelWidth = 130 * 2 + 40 + 48; // both panels + gaps + wrapper padding
+            const sidePanelWidth = 116 * 2 + 40 + 48 + 30; // both panels + gaps + wrapper padding + note labels
             canvasSize = Math.min(vh - chrome, vw - sidePanelWidth);
         }
 
@@ -585,7 +586,7 @@ export class Application extends React.Component {
         }
     }
     changeEditMode = () => {
-        this.setState({ deleting: !this.state.deleting });
+        this.setState({ deleting: !this.state.deleting, eraseTarget: this.state.eraseTarget || 'both' });
     }
     toggleWall = (wallKey) => {
         // When called from 'closest' mode, convert wallKey to cell+side and use addWallAtCell for symmetry
@@ -809,7 +810,7 @@ export class Application extends React.Component {
     }
     addToGrid = (x, y, e, forced) => {
         this._pushUndo();
-        if (e.shiftKey || this.state.deleting) {
+        if (e.shiftKey || (this.state.deleting && this.state.eraseTarget !== 'walls')) {
             this.setState({
                 grid: removeFromGrid(this.state.grid, x, y)
             });
@@ -860,8 +861,24 @@ export class Application extends React.Component {
         this.setState({scale: event.nativeEvent.target.value.split(',').map((asdf)=>parseInt(asdf))});
     };
 
+    nudgeScale = (delta) => {
+        const currentStr = this.state.scale.toString();
+        const idx = scales.findIndex(s => s.value.toString() === currentStr);
+        const nextIdx = idx + delta;
+        if (nextIdx >= 0 && nextIdx < scales.length) {
+            this.setState({ scale: scales[nextIdx].value });
+        }
+    };
+
     updateMusicalKey = (event) => {
         this.setState({musicalKey: parseInt(event.nativeEvent.target.value)});
+    };
+
+    nudgeMusicalKey = (delta) => {
+        const next = this.state.musicalKey + delta;
+        if (next >= 21 && next <= 108) {
+            this.setState({ musicalKey: next });
+        }
     };
 
     render() {
@@ -1059,7 +1076,7 @@ export class Application extends React.Component {
                                         piano: '🎹', guitar: '🎸', bass: '🪕', drums: '🥁', trumpet: '🎺',
                                         sax: '🎷', violin: '🎻', flute: '🪈', pad: '🌊',
                                         lead: '⚡', organ: '🪗', bell: '🔔', voice: '🎤', fx: '✨',
-                                        square: '⏹', saw: '◮', sine: '〰', noise: '▒',
+                                        square: '🔲', saw: '🪚', sine: '🌀', noise: '🌫️',
                                     };
                                     const iconChar = ICON_MAP[iconKey] || '🎹';
                                     return (
@@ -1140,10 +1157,14 @@ export class Application extends React.Component {
                                     ['bell', '🔔', 'Bell'],
                                     ['voice', '🎤', 'Voice'],
                                     ['fx', '✨', 'FX'],
-                                    ['square', '⏹', 'Square'],
-                                    ['saw', '◮', 'Saw'],
-                                    ['sine', '〰', 'Sine'],
-                                    ['noise', '▒', 'Noise'],
+                                    ['square', '🔲', 'Square'],
+                                    ['saw', '🪚', 'Saw'],
+                                    ['sine', '🌀', 'Sine'],
+                                    ['noise', '🌫️', 'Noise'],
+                                    ['strings', '🎼', 'Strings'],
+                                    ['perc', '🪘', 'Percussion'],
+                                    ['synth', '🎛️', 'Synth'],
+                                    ['keys', '🎵', 'Keys'],
                                 ];
                                 const QUICK_SYNTHS = [
                                     ['default', 'Default'],
@@ -1225,18 +1246,46 @@ export class Application extends React.Component {
                                             {/* Section 2: Custom Browser Synth (TODO) */}
                                             <div className="prog-section">
                                                 <div className="prog-section-label">Custom Browser Synth</div>
-                                                <div className="prog-synth-grid">
-                                                    {QUICK_SYNTHS.map(([key, label]) => (
-                                                        <button
-                                                            key={key}
-                                                            className={`prog-preset-btn ${(settings.synthType || 'default') === key ? 'active' : ''}`}
-                                                            onClick={() => {
+                                                <div className="prog-synth-select-row">
+                                                    <button
+                                                        className="key-nudge-btn"
+                                                        disabled={QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default')) <= 0}
+                                                        onClick={() => {
+                                                            const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
+                                                            if (idx > 0) {
                                                                 const newSettings = { ...this.state.channelSettings };
-                                                                newSettings[ch] = { ...settings, synthType: key };
+                                                                newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[idx - 1][0] };
                                                                 this.setState({ channelSettings: newSettings });
-                                                            }}
-                                                        >{label}</button>
-                                                    ))}
+                                                            }
+                                                        }}
+                                                        title="Previous synth"
+                                                    >◀</button>
+                                                    <select
+                                                        className="sel prog-synth-sel"
+                                                        value={settings.synthType || 'default'}
+                                                        onChange={(e) => {
+                                                            const newSettings = { ...this.state.channelSettings };
+                                                            newSettings[ch] = { ...settings, synthType: e.target.value };
+                                                            this.setState({ channelSettings: newSettings });
+                                                        }}
+                                                    >
+                                                        {QUICK_SYNTHS.map(([key, label]) => (
+                                                            <option key={key} value={key}>{label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button
+                                                        className="key-nudge-btn"
+                                                        disabled={QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default')) >= QUICK_SYNTHS.length - 1}
+                                                        onClick={() => {
+                                                            const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
+                                                            if (idx < QUICK_SYNTHS.length - 1) {
+                                                                const newSettings = { ...this.state.channelSettings };
+                                                                newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[idx + 1][0] };
+                                                                this.setState({ channelSettings: newSettings });
+                                                            }
+                                                        }}
+                                                        title="Next synth"
+                                                    >▶</button>
                                                 </div>
                                                 <p className="prog-section-hint">Per-channel synth engine — coming soon</p>
                                             </div>
@@ -1307,7 +1356,41 @@ export class Application extends React.Component {
 
                         {/* ── CENTER CANVAS ── */}
                         <div className="canvas-area" data-step="5" data-intro="Click on the grid to place arrows!">
-                            <div id="sketch-holder" />
+                            {(() => {
+                                const gridSize = this.state.grid.size;
+                                const canvasSize = getGridCanvasSize();
+                                const border = 2;
+                                const cellSize = canvasSize / gridSize;
+                                const scale = this.state.scale;
+                                const mKey = this.state.musicalKey;
+                                const getNoteLabel = (idx) => {
+                                    const midi = mKey + scale[idx % scale.length];
+                                    if (midi < 21 || midi > 108) return '';
+                                    return musicalNotes[midi - 21].toUpperCase();
+                                };
+                                return (
+                                    <div className="grid-label-wrapper" style={{ position: 'relative' }}>
+                                        {/* Column labels (top) */}
+                                        <div className="grid-labels grid-labels-top">
+                                            {range(0, gridSize).map(i => (
+                                                <span key={i} className="grid-note-label" style={{
+                                                    left: border + i * cellSize + cellSize / 2,
+                                                    width: cellSize
+                                                }}>{getNoteLabel(i)}</span>
+                                            ))}
+                                        </div>
+                                        {/* Row labels (left) */}
+                                        <div className="grid-labels grid-labels-left">
+                                            {range(0, gridSize).map(i => (
+                                                <span key={i} className="grid-note-label" style={{
+                                                    top: border + i * cellSize + cellSize / 2
+                                                }}>{getNoteLabel(i)}</span>
+                                            ))}
+                                        </div>
+                                        <div id="sketch-holder" />
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* ── RIGHT PANEL ── */}
@@ -1367,27 +1450,8 @@ export class Application extends React.Component {
                                 </div>
                             )}
                             {/* Draw Tools */}
-                            <div className="panel-group draw-panel">
+                            <div className={`panel-group draw-panel ${!this.state.deleting ? 'draw-active' : ''}`}>
                                 <h3>Draw</h3>
-                                {/* Mode toggle: Draw / Erase */}
-                                <div className="draw-mode-toggle">
-                                    <button
-                                        className={`mode-btn ${!this.state.deleting ? 'active' : ''}`}
-                                        onClick={() => this.setState({ deleting: false })}
-                                        title="Draw / Add mode"
-                                    >
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
-                                        <span>Draw</span>
-                                    </button>
-                                    <button
-                                        className={`mode-btn ${this.state.deleting ? 'erasing' : ''}`}
-                                        onClick={() => this.setState({ deleting: true })}
-                                        title="Erase / Remove mode (E)"
-                                    >
-                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20h8.94l7.44-7.44c.79-.78.79-2.04 0-2.83l-4.86-4.86c-.39-.39-.9-.59-1.41-.59zM6.1 18l-1.66-1.66 5.48-5.48 1.66 1.66L6.1 18z" fill="currentColor"/></svg>
-                                        <span>Erase</span>
-                                    </button>
-                                </div>
 
                                 {/* ── Arrow Tool Group ── */}
                                 <div className={`draw-tool-group ${this.state.deleting ? 'inactive-section' : this.state.drawMode === 'arrow' ? 'active-section' : 'inactive-section'}`}
@@ -1506,7 +1570,7 @@ export class Application extends React.Component {
                                 {(() => {
                                     const anySym = this.state.verticalSymmetry || this.state.horizontalSymmetry || this.state.forwardDiagonalSymmetry || this.state.backwardDiagonalSymmetry;
                                     return (
-                                        <div className={`draw-tool-group ${anySym ? 'active-section' : 'inactive-section'}`}>
+                                        <div className={`draw-tool-group ${!this.state.deleting && anySym ? 'active-section' : 'inactive-section'}`}>
                                             <span className="group-label">Symmetry</span>
                                             <div className="sym-grid">
                                                 <button className={`tool-btn ${this.state.verticalSymmetry ? 'active' : ''}`} onClick={() => this.setState({verticalSymmetry: !this.state.verticalSymmetry})} title="Vertical (1)">
@@ -1526,6 +1590,39 @@ export class Application extends React.Component {
                                     );
                                 })()}
                             </div>
+
+                            {/* ── Erase Panel ── */}
+                            <div className={`panel-group erase-panel ${this.state.deleting ? 'erase-panel-active' : ''}`}
+                                 onClick={() => this.setState({ deleting: true })}
+                            >
+                                <h3>Erase</h3>
+                                <div className="erase-grid">
+                                    <button
+                                        className={`tool-btn ${this.state.deleting && this.state.eraseTarget === 'arrows' ? 'active' : ''}`}
+                                        onClick={(e) => { e.stopPropagation(); this.setState({ deleting: true, eraseTarget: 'arrows' }); }}
+                                        title="Erase arrows only"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" fill="currentColor"/></svg>
+                                        <span>Arrows</span>
+                                    </button>
+                                    <button
+                                        className={`tool-btn ${this.state.deleting && this.state.eraseTarget === 'walls' ? 'active' : ''}`}
+                                        onClick={(e) => { e.stopPropagation(); this.setState({ deleting: true, eraseTarget: 'walls' }); }}
+                                        title="Erase walls only"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="2"/></svg>
+                                        <span>Walls</span>
+                                    </button>
+                                    <button
+                                        className={`tool-btn wide ${this.state.deleting && this.state.eraseTarget === 'both' ? 'active' : ''}`}
+                                        onClick={(e) => { e.stopPropagation(); this.setState({ deleting: true, eraseTarget: 'both' }); }}
+                                        title="Erase both arrows and walls"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73c-.78.77-.78 2.04 0 2.83L5.03 20h8.94l7.44-7.44c.79-.78.79-2.04 0-2.83l-4.86-4.86c-.39-.39-.9-.59-1.41-.59zM6.1 18l-1.66-1.66 5.48-5.48 1.66 1.66L6.1 18z" fill="currentColor"/></svg>
+                                        <span>Both</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1533,6 +1630,7 @@ export class Application extends React.Component {
                     <footer className="console-footer">
                         <div className="footer-group">
                             <label>Scale</label>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(-1)} disabled={scales.findIndex(s => s.value.toString() === this.state.scale.toString()) <= 0} title="Previous scale">▼</button>
                             <select 
                                 className="sel"
                                 value={this.state.scale.toString()} 
@@ -1548,9 +1646,11 @@ export class Application extends React.Component {
                                     </optgroup>
                                 ))}
                             </select>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(1)} disabled={scales.findIndex(s => s.value.toString() === this.state.scale.toString()) >= scales.length - 1} title="Next scale">▲</button>
                         </div>
                         <div className="footer-group">
                             <label>Key</label>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(-1)} disabled={this.state.musicalKey <= 21} title="Key down">▼</button>
                             <select 
                                 className="sel"
                                 value={this.state.musicalKey} 
@@ -1562,6 +1662,7 @@ export class Application extends React.Component {
                                     </option>
                                 ))}
                             </select>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(1)} disabled={this.state.musicalKey >= 108} title="Key up">▲</button>
                         </div>
                         <div className="footer-group">
                             <label>MIDI Out</label>
@@ -1613,24 +1714,24 @@ export class Application extends React.Component {
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
                                 <span>Save</span>
                             </button>
-                            <button className="action-btn" onClick={this.loadFromLocalStorage} title="Manage saved grids">
-                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
-                                <span>Load</span>
+                            <button className="action-btn" onClick={this.loadFromLocalStorage} title="Browse saved grids">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" fill="currentColor"/></svg>
+                                <span>Browse</span>
                             </button>
-                            <button className="action-btn" onClick={this.exportGrid} title="Export current grid as JSON file">
+                            <button className="action-btn" onClick={this.exportGrid} title="Download current grid as JSON file">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
-                                <span>Export</span>
+                                <span>Download</span>
                             </button>
-                            <button className="action-btn" onClick={this.importGrid} title="Import a grid from JSON file">
+                            <button className="action-btn" onClick={this.importGrid} title="Upload a grid from JSON file">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
-                                <span>Import</span>
+                                <span>Upload</span>
                             </button>
                             <button className="action-btn share-btn" onClick={this.share} title="Copy a link to share this creation">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor"/></svg>
                                 <span>Share</span>
                             </button>
                         </div>
-                        <a href="https://nathaniel-young.com" target="_blank" rel="noopener noreferrer" className="footer-discover">Discover more at nathaniel-young.com</a>
+                        <a href="https://nathaniel-young.com" target="_blank" rel="noopener noreferrer" className="footer-discover">🔗 Discover more at nathaniel-young.com →</a>
                     </div>
                 </div>
 
@@ -1755,7 +1856,7 @@ export class Application extends React.Component {
                                     <h3>Save &amp; Share</h3>
                                     <ul>
                                         <li><strong>Save</strong> — name and store your creations in the browser.</li>
-                                        <li><strong>Load</strong> — open the save manager to browse, load, or delete saved grids.</li>
+                                        <li><strong>Browse</strong> — open the saved grid manager to browse, load, or delete saved grids.</li>
                                         <li><strong>Export / Import</strong> — download your grid as a JSON file, or load one from disk.</li>
                                         <li><strong>Share This Creation</strong> — copy a URL that encodes your grid so others can load it.</li>
                                     </ul>
@@ -1790,7 +1891,7 @@ export class Application extends React.Component {
                     <div className="save-manager-overlay" onClick={() => this.setState({ showSaveManager: false })}>
                         <div className="save-manager-modal" onClick={(e) => e.stopPropagation()}>
                             <div className="save-manager-header">
-                                <h2>Save Manager</h2>
+                                <h2>Saved Grids</h2>
                                 <button className="save-manager-close" onClick={() => this.setState({ showSaveManager: false })}>×</button>
                             </div>
 
@@ -1828,7 +1929,7 @@ export class Application extends React.Component {
                                             </div>
                                             <div className="save-item-actions">
                                                 <button className="save-item-btn load" onClick={() => this.loadSavedGrid(i)} title="Load">
-                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
+                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
                                                 </button>
                                                 <button className="save-item-btn delete" onClick={() => this.deleteSavedGrid(i)} title="Delete">
                                                     <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
@@ -1841,13 +1942,14 @@ export class Application extends React.Component {
 
                             {/* Import / Export all */}
                             <div className="save-manager-footer">
-                                <button className="save-manager-action-btn" onClick={this.exportAllSaves} title="Export all saves as JSON">
+                                <p className="save-manager-tip">💡 Browser saves can be lost if you clear site data. Use <strong>Download All</strong> to keep a backup file.</p>
+                                <button className="save-manager-action-btn" onClick={this.exportAllSaves} title="Download all saves as JSON">
                                     <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
-                                    Export All
+                                    Download All
                                 </button>
-                                <button className="save-manager-action-btn" onClick={this.importGrid} title="Import from JSON file">
+                                <button className="save-manager-action-btn" onClick={this.importGrid} title="Upload a grid from JSON file">
                                     <svg viewBox="0 0 24 24" width="12" height="12"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
-                                    Import
+                                    Upload
                                 </button>
                             </div>
                         </div>
