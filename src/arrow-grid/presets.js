@@ -1,20 +1,23 @@
 export default [
-  // 0 — Rainbow Spiral: 7 arrows symmetrically placed, one per channel
+  // 0 — Rainbow Spiral: arrows scattered across the grid, one per channel
   {
     name: "Rainbow Spiral",
     size: 8,
     arrows: [
-      { x: 3, y: 1, vector: 1, channel: 1 },  // blue — right
-      { x: 4, y: 1, vector: 3, channel: 2 },  // purple — left
-      { x: 1, y: 3, vector: 2, channel: 3 },  // green — down
-      { x: 6, y: 3, vector: 2, channel: 4 },  // orange — down
-      { x: 1, y: 4, vector: 0, channel: 5 },  // red — up
-      { x: 6, y: 4, vector: 0, channel: 6 },  // yellow — up
-      { x: 3, y: 6, vector: 1, channel: 7 },  // pink — right
+      { x: 0, y: 0, vector: 1, channel: 1 },  // blue — top-left, right
+      { x: 7, y: 2, vector: 2, channel: 2 },  // purple — far right, down
+      { x: 2, y: 5, vector: 0, channel: 3 },  // green — lower-left, up
+      { x: 5, y: 0, vector: 2, channel: 4 },  // orange — top-right area, down
+      { x: 0, y: 7, vector: 1, channel: 5 },  // red — bottom-left, right
+      { x: 4, y: 3, vector: 3, channel: 6 },  // yellow — center, left
+      { x: 7, y: 6, vector: 0, channel: 7 },  // pink — bottom-right, up
+      { x: 1, y: 2, vector: 2, channel: 8 },  // teal — upper-left, down
+      { x: 6, y: 4, vector: 3, channel: 9 },  // lime — mid-right, left
     ],
     walls: [
-      "h:3:3", "h:3:4",
-      "h:4:3", "h:4:4",
+      "h:2:3", "h:2:4",
+      "v:3:2", "v:4:5",
+      "h:5:1", "h:5:6",
     ],
     muted: true
   },

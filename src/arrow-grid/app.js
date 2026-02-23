@@ -36,6 +36,40 @@ const minSize = 2;
 const minNoteLength = -500;
 const maxNoteLength = -50;
 
+// Generate a random grid with tame constraints
+const generateRandomGrid = () => {
+    const size = 5 + Math.floor(Math.random() * 16);        // 5-20
+    const numArrows = 5 + Math.floor(Math.random() * 16);    // 5-20
+    const arrows = [];
+    for (let i = 0; i < numArrows; i++) {
+        arrows.push({
+            x: Math.floor(Math.random() * size),
+            y: Math.floor(Math.random() * size),
+            vector: Math.floor(Math.random() * 4),
+            channel: 1 + Math.floor(Math.random() * 9),       // channels 1-9
+        });
+    }
+    // Add 0-8 random walls
+    const numWalls = Math.floor(Math.random() * 9);
+    const walls = [];
+    for (let i = 0; i < numWalls; i++) {
+        const isH = Math.random() > 0.5;
+        if (isH) {
+            const wy = Math.floor(Math.random() * (size - 1));
+            const wx = Math.floor(Math.random() * size);
+            const key = `h:${wy}:${wx}`;
+            if (!walls.includes(key)) walls.push(key);
+        } else {
+            const wy = Math.floor(Math.random() * size);
+            const wx = Math.floor(Math.random() * (size - 1));
+            const key = `v:${wy}:${wx}`;
+            if (!walls.includes(key)) walls.push(key);
+        }
+    }
+    return { size, arrows, walls, muted: true };
+};
+const generateRandomSpeed = () => 150 + Math.floor(Math.random() * 251); // 150-400ms
+
 
 // Simple click sound using Tone.js
 let clickSynth = null;
@@ -68,11 +102,11 @@ export class Application extends React.Component {
         super(props);
 
         this.state = {
-            currentPreset: 0,  // Start at first preset
+            currentPreset: -1,  // -1 = random/custom, 0+ = preset index
             presets,
             inputDirection: 0,
-            noteLength: props.noteLength || 350,
-            grid: presets[0] || newGrid(8, 6),  // Start with first preset
+            noteLength: props.noteLength || generateRandomSpeed(),
+            grid: props.grid || generateRandomGrid(),  // Start with random grid
             playing: false,
             soundOn: true,
             midiOn: false,
@@ -116,6 +150,12 @@ export class Application extends React.Component {
             showCollisions: true,
             showIntro: !localStorage.getItem('arrowgrid-seen'),
             undoStack: [],
+            redoStack: [],
+            toast: null,
+            savedGrids: JSON.parse(localStorage.getItem('arrowgrid-saves') || '[]'),
+            showSaveManager: false,
+            saveNameInput: '',
+            showInfo: false,
         };
     }
 
@@ -133,6 +173,19 @@ export class Application extends React.Component {
         
         // Add keyboard shortcuts
         document.addEventListener('keydown', this.handleKeyDown);
+        
+        // Resume AudioContext on first user gesture (browsers block autoplay)
+        const resumeAudio = async () => {
+            try { await Tone.start(); } catch (e) { /* ignore */ }
+            document.removeEventListener('pointerdown', resumeAudio);
+            document.removeEventListener('keydown', resumeAudio);
+        };
+        document.addEventListener('pointerdown', resumeAudio, { once: false });
+        document.addEventListener('keydown', resumeAudio, { once: false });
+        this._resumeAudioCleanup = () => {
+            document.removeEventListener('pointerdown', resumeAudio);
+            document.removeEventListener('keydown', resumeAudio);
+        };
         
         // Click outside to close volume popup
         document.addEventListener('mousedown', this._closeVolumePopup);
@@ -160,6 +213,7 @@ export class Application extends React.Component {
         document.removeEventListener('keydown', this.handleKeyDown);
         document.removeEventListener('mousedown', this._closeVolumePopup);
         window.removeEventListener('resize', this._handleResize);
+        if (this._resumeAudioCleanup) this._resumeAudioCleanup();
         clearTimeout(this._timerID);
         clearTimeout(this._resizeTimer);
     }
@@ -256,9 +310,18 @@ export class Application extends React.Component {
                 this.setState({ deleting: false, drawMode: this.state.drawMode === 'wall' ? 'arrow' : 'wall', wallSides: new Set(), wallClosest: true });
                 break;
             case 'KeyZ':
-                if (e.ctrlKey || e.metaKey) {
+                if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+                    e.preventDefault();
+                    this.redo();
+                } else if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
                     this.undo();
+                }
+                break;
+            case 'KeyY':
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    this.redo();
                 }
                 break;
             case 'KeyS':
@@ -272,48 +335,159 @@ export class Application extends React.Component {
         }
     }
 
-    // ── Undo ──
+    // ── Undo / Redo ──
     _pushUndo = () => {
         const snapshot = JSON.stringify(this.state.grid);
         const stack = [...this.state.undoStack, snapshot].slice(-30); // keep last 30
-        this.setState({ undoStack: stack });
+        this.setState({ undoStack: stack, redoStack: [] }); // clear redo on new action
     }
     undo = () => {
         if (this.state.undoStack.length === 0) return;
-        const stack = [...this.state.undoStack];
-        const prev = stack.pop();
-        this.setState({ grid: JSON.parse(prev), undoStack: stack });
+        const undoStack = [...this.state.undoStack];
+        const prev = undoStack.pop();
+        const redoStack = [...this.state.redoStack, JSON.stringify(this.state.grid)].slice(-30);
+        this.setState({ grid: JSON.parse(prev), undoStack, redoStack });
+    }
+    redo = () => {
+        if (this.state.redoStack.length === 0) return;
+        const redoStack = [...this.state.redoStack];
+        const next = redoStack.pop();
+        const undoStack = [...this.state.undoStack, JSON.stringify(this.state.grid)].slice(-30);
+        this.setState({ grid: JSON.parse(next), undoStack, redoStack });
     }
 
     // ── Save / Load ──
-    saveToLocalStorage = () => {
-        const data = {
-            grid: this.state.grid,
-            noteLength: this.state.noteLength,
-            scale: this.state.scale,
-            musicalKey: this.state.musicalKey,
-            channelSettings: this.state.channelSettings,
-        };
-        localStorage.setItem('arrowgrid-save', JSON.stringify(data));
-        this._showToast('Grid saved');
+    _getGridData = () => ({
+        grid: this.state.grid,
+        noteLength: this.state.noteLength,
+        scale: this.state.scale,
+        musicalKey: this.state.musicalKey,
+        channelSettings: this.state.channelSettings,
+    });
+
+    _persistSaves = (saves) => {
+        localStorage.setItem('arrowgrid-saves', JSON.stringify(saves));
+        this.setState({ savedGrids: saves });
     }
+
+    saveToLocalStorage = () => {
+        // Quick-save: open manager with save prompt
+        this.setState({ showSaveManager: true, saveNameInput: '' });
+    }
+
+    saveWithName = (name) => {
+        if (!name.trim()) return;
+        const entry = {
+            name: name.trim(),
+            data: this._getGridData(),
+            date: new Date().toISOString(),
+        };
+        const saves = [...this.state.savedGrids, entry];
+        this._persistSaves(saves);
+        this.setState({ saveNameInput: '' });
+        this._showToast(`Saved "${name.trim()}"`);
+    }
+
+    loadSavedGrid = (index) => {
+        const entry = this.state.savedGrids[index];
+        if (!entry) return;
+        this._pushUndo();
+        const data = entry.data;
+        this.setState({
+            grid: data.grid,
+            noteLength: data.noteLength ?? this.state.noteLength,
+            scale: data.scale ?? this.state.scale,
+            musicalKey: data.musicalKey ?? this.state.musicalKey,
+            channelSettings: data.channelSettings ?? this.state.channelSettings,
+            currentPreset: -1,
+            showSaveManager: false,
+        });
+        this._showToast(`Loaded "${entry.name}"`);
+    }
+
+    deleteSavedGrid = (index) => {
+        const saves = [...this.state.savedGrids];
+        const name = saves[index]?.name;
+        saves.splice(index, 1);
+        this._persistSaves(saves);
+        this._showToast(`Deleted "${name}"`);
+    }
+
+    renameSavedGrid = (index, newName) => {
+        if (!newName.trim()) return;
+        const saves = [...this.state.savedGrids];
+        saves[index] = { ...saves[index], name: newName.trim() };
+        this._persistSaves(saves);
+    }
+
+    exportGrid = () => {
+        const data = this._getGridData();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'arrow-grid.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        this._showToast('Exported grid as JSON');
+    }
+
+    exportAllSaves = () => {
+        const data = this.state.savedGrids;
+        if (data.length === 0) { this._showToast('No saves to export'); return; }
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'arrow-grid-saves.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        this._showToast(`Exported ${data.length} save(s)`);
+    }
+
+    importGrid = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.target.result);
+                    // Detect: is this a single save or an array of saves?
+                    if (Array.isArray(parsed)) {
+                        // Array of saves — merge into existing
+                        const newSaves = [...this.state.savedGrids, ...parsed];
+                        this._persistSaves(newSaves);
+                        this._showToast(`Imported ${parsed.length} save(s)`);
+                    } else if (parsed.grid) {
+                        // Single grid — load directly
+                        this._pushUndo();
+                        this.setState({
+                            grid: parsed.grid,
+                            noteLength: parsed.noteLength ?? this.state.noteLength,
+                            scale: parsed.scale ?? this.state.scale,
+                            musicalKey: parsed.musicalKey ?? this.state.musicalKey,
+                            channelSettings: parsed.channelSettings ?? this.state.channelSettings,
+                            currentPreset: -1,
+                        });
+                        this._showToast('Imported grid');
+                    } else {
+                        this._showToast('Invalid file format');
+                    }
+                } catch (err) {
+                    this._showToast('Import failed — invalid JSON');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
     loadFromLocalStorage = () => {
-        const raw = localStorage.getItem('arrowgrid-save');
-        if (!raw) { this._showToast('No saved grid'); return; }
-        try {
-            const data = JSON.parse(raw);
-            this._pushUndo();
-            this.setState({
-                grid: data.grid,
-                noteLength: data.noteLength ?? this.state.noteLength,
-                scale: data.scale ?? this.state.scale,
-                musicalKey: data.musicalKey ?? this.state.musicalKey,
-                channelSettings: data.channelSettings ?? this.state.channelSettings,
-            });
-            this._showToast('Grid loaded');
-        } catch (e) {
-            this._showToast('Load failed');
-        }
+        this.setState({ showSaveManager: true });
     }
 
     // ── Toast ──
@@ -323,7 +497,17 @@ export class Application extends React.Component {
         clearTimeout(this._toastTimer);
         this._toastTimer = setTimeout(() => this.setState({ toast: null }), 2000);
     }
-    
+
+    // ── Randomize ──
+    randomizeGrid = () => {
+        this._pushUndo();
+        this.setState({
+            grid: generateRandomGrid(),
+            noteLength: generateRandomSpeed(),
+            currentPreset: -1,
+        });
+    }
+
     prevPreset = () => {
         this._pushUndo();
         let nextPresetIndex = this.state.currentPreset - 1;
@@ -650,7 +834,7 @@ export class Application extends React.Component {
         } else {
             try {
                 await navigator.clipboard.writeText(shareUrl);
-                this._showToast('Link copied!');
+                this._showToast('Link copied to clipboard — paste to share!');
             } catch (e) {
                 // Fallback: prompt
                 window.prompt('Copy this link:', shareUrl);
@@ -683,6 +867,25 @@ export class Application extends React.Component {
                         </h1>
 
                         <button 
+                            className="hdr-btn undo-btn"
+                            onClick={this.undo}
+                            title="Undo (Ctrl+Z)"
+                            disabled={this.state.undoStack.length === 0}
+                        >
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
+                            <span>Undo</span>
+                        </button>
+                        <button 
+                            className="hdr-btn undo-btn"
+                            onClick={this.redo}
+                            title="Redo (Ctrl+Shift+Z)"
+                            disabled={this.state.redoStack.length === 0}
+                        >
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.06-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" fill="currentColor"/></svg>
+                            <span>Redo</span>
+                        </button>
+
+                        <button 
                             className={`play-btn-hero ${this.state.playing ? 'playing' : ''}`}
                             onClick={this.state.playing ? this.pause : this.play}
                             title={this.state.playing ? "Pause (Space)" : "Play (Space)"}
@@ -698,17 +901,29 @@ export class Application extends React.Component {
                             <button className="nav-btn" onClick={this.prevPreset} title="Previous Preset (←)">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
                             </button>
-                            <span className="preset-label">{this.state.presets[this.state.currentPreset]?.name || 'Custom'}</span>
+                            <span className="preset-label">{this.state.currentPreset >= 0 ? (this.state.presets[this.state.currentPreset]?.name || 'Preset') : 'Custom'}</span>
                             <button className="nav-btn" onClick={this.nextPreset} title="Next Preset (→)">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor"/></svg>
                             </button>
+                            <button className="hdr-btn" onClick={this.randomizeGrid} title="Randomize grid">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm-.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.79-3.13z" fill="currentColor"/></svg>
+                                <span>Randomize</span>
+                            </button>
                             <button className="hdr-btn danger" onClick={this.emptyGrid} title="Clear Grid (Delete)">
                                 <svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
-                                <span>Clear Grid</span>
+                                <span>Clear</span>
                             </button>
                         </div>
 
                         <div className="header-actions">
+                            <button
+                                className="hdr-btn"
+                                onClick={() => this.setState({ showInfo: true })}
+                                title="About Arrow Grid"
+                            >
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor"/></svg>
+                                <span>Info</span>
+                            </button>
                             <button 
                                 className={`hdr-btn ${this.state.soundOn ? 'active' : ''}`}
                                 onClick={this.muteToggle}
@@ -1131,8 +1346,36 @@ export class Application extends React.Component {
                             >{Math.round(this.state.globalVelocity * 100)}%</button>
                         </div>
                     </footer>
+
+                    {/* ── Action bar ── */}
+                    <div className="action-bar">
+                        <button className="action-btn" onClick={this.saveToLocalStorage} title="Save to browser (Ctrl+S)">
+                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
+                            <span>Save</span>
+                        </button>
+                        <button className="action-btn" onClick={this.loadFromLocalStorage} title="Manage saved grids">
+                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
+                            <span>Load</span>
+                        </button>
+                        <button className="action-btn" onClick={this.exportGrid} title="Export current grid as JSON file">
+                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
+                            <span>Export</span>
+                        </button>
+                        <button className="action-btn" onClick={this.importGrid} title="Import a grid from JSON file">
+                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
+                            <span>Import</span>
+                        </button>
+                        <button className="action-btn share-btn" onClick={this.share} title="Copy a link to share this creation">
+                            <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor"/></svg>
+                            <span>Share This Creation</span>
+                        </button>
+                    </div>
+                    <div className="app-footer-bar">
+                        <span className="footer-copyright">© {new Date().getFullYear()} Nathaniel Young</span>
+                        <a href="https://nathaniel-young.com" target="_blank" rel="noopener noreferrer" className="footer-discover">Discover more at nathaniel-young.com</a>
+                    </div>
                 </div>
-                
+
                 {/* ── Toast notification ── */}
                 {this.state.toast && (
                     <div className="toast">{this.state.toast}</div>
@@ -1158,21 +1401,157 @@ export class Application extends React.Component {
                     </div>
                 )}
 
-                {/* ── Floating action bar ── */}
-                <div className="fab-bar">
-                    <button className="fab-btn" onClick={this.undo} title="Undo (Ctrl+Z)" disabled={this.state.undoStack.length === 0}>
-                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" fill="currentColor"/></svg>
-                    </button>
-                    <button className="fab-btn" onClick={this.saveToLocalStorage} title="Save (Ctrl+S)">
-                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" fill="currentColor"/></svg>
-                    </button>
-                    <button className="fab-btn" onClick={this.loadFromLocalStorage} title="Load saved grid">
-                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
-                    </button>
-                    <button className="fab-btn" onClick={this.share} title="Share grid link">
-                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor"/></svg>
-                    </button>
-                </div>
+                {/* ── Info Modal ── */}
+                {this.state.showInfo && (
+                    <div className="info-overlay" onClick={() => this.setState({ showInfo: false })}>
+                        <div className="info-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="info-modal-header">
+                                <h2><span className="title-arrow">➤</span> Arrow Grid</h2>
+                                <button className="info-modal-close" onClick={() => this.setState({ showInfo: false })}>×</button>
+                            </div>
+                            <div className="info-modal-body">
+                                <section>
+                                    <h3>What is Arrow Grid?</h3>
+                                    <p>Arrow Grid is an audio-visual instrument that creates rhythms and melodies from bouncing arrows on a grid. Place arrows, hit play, and watch them move — each bounce triggers a musical note. It's part sequencer, part generative art, part toy.</p>
+                                </section>
+                                <section>
+                                    <h3>Getting Started</h3>
+                                    <ul>
+                                        <li><strong>Click</strong> any cell to place an arrow in the current direction and channel.</li>
+                                        <li><strong>Shift+Click</strong> to remove an arrow.</li>
+                                        <li>Press <strong>Space</strong> to play/pause the simulation.</li>
+                                        <li>Use <strong>← →</strong> arrow keys to browse built-in presets.</li>
+                                        <li>Press <strong>R</strong> to rotate the arrow direction before placing.</li>
+                                    </ul>
+                                </section>
+                                <section>
+                                    <h3>Channels</h3>
+                                    <p>There are 16 channels, each with its own color. Select a channel before placing arrows to assign them. Each channel has independent volume control and mute toggle. Click a channel's volume button to open a full-height slider overlay.</p>
+                                </section>
+                                <section>
+                                    <h3>Walls</h3>
+                                    <p>Switch to <strong>Wall mode</strong> (press <strong>W</strong>) to place walls between cells. Arrows bounce off walls, creating more complex patterns. Walls can be placed on any edge between adjacent cells.</p>
+                                </section>
+                                <section>
+                                    <h3>Symmetry</h3>
+                                    <p>Enable horizontal, vertical, or diagonal symmetry to automatically mirror your placements across the grid. Combine multiple symmetries for kaleidoscopic patterns.</p>
+                                </section>
+                                <section>
+                                    <h3>Musical Settings</h3>
+                                    <ul>
+                                        <li><strong>Speed</strong> — controls how fast arrows move (BPM).</li>
+                                        <li><strong>Grid Size</strong> — resize from 2×2 up to 20×20.</li>
+                                        <li><strong>Scale</strong> — choose from major, minor, pentatonic, modal, exotic, and chromatic scales.</li>
+                                        <li><strong>Key</strong> — set the root note (C through B).</li>
+                                        <li><strong>Master Volume</strong> — global output level.</li>
+                                    </ul>
+                                </section>
+                                <section>
+                                    <h3>MIDI</h3>
+                                    <p>Enable MIDI to send note data to external instruments or your DAW. Select MIDI input and output devices from the footer. Each channel sends on its corresponding MIDI channel.</p>
+                                </section>
+                                <section>
+                                    <h3>Save &amp; Share</h3>
+                                    <ul>
+                                        <li><strong>Save</strong> — name and store your creations in the browser.</li>
+                                        <li><strong>Load</strong> — open the save manager to browse, load, or delete saved grids.</li>
+                                        <li><strong>Export / Import</strong> — download your grid as a JSON file, or load one from disk.</li>
+                                        <li><strong>Share This Creation</strong> — copy a URL that encodes your grid so others can load it.</li>
+                                    </ul>
+                                </section>
+                                <section>
+                                    <h3>Keyboard Shortcuts</h3>
+                                    <table className="info-shortcuts">
+                                        <tbody>
+                                            <tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
+                                            <tr><td><kbd>← →</kbd></td><td>Previous / Next preset</td></tr>
+                                            <tr><td><kbd>R</kbd></td><td>Rotate arrow direction</td></tr>
+                                            <tr><td><kbd>E</kbd></td><td>Toggle edit mode (delete)</td></tr>
+                                            <tr><td><kbd>W</kbd></td><td>Toggle wall mode</td></tr>
+                                            <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
+                                            <tr><td><kbd>Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
+                                            <tr><td><kbd>Ctrl+S</kbd></td><td>Save</td></tr>
+                                            <tr><td><kbd>Delete</kbd></td><td>Clear grid</td></tr>
+                                            <tr><td><kbd>1-9</kbd></td><td>Select channel</td></tr>
+                                        </tbody>
+                                    </table>
+                                </section>
+                                <section className="info-credits">
+                                    <p>Created by <a href="https://nathaniel-young.com" target="_blank" rel="noopener noreferrer">Nathaniel Young</a></p>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Save Manager Modal ── */}
+                {this.state.showSaveManager && (
+                    <div className="save-manager-overlay" onClick={() => this.setState({ showSaveManager: false })}>
+                        <div className="save-manager-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="save-manager-header">
+                                <h2>Save Manager</h2>
+                                <button className="save-manager-close" onClick={() => this.setState({ showSaveManager: false })}>×</button>
+                            </div>
+
+                            {/* Save new */}
+                            <div className="save-manager-new">
+                                <input
+                                    type="text"
+                                    className="save-name-input"
+                                    placeholder="Name this creation…"
+                                    value={this.state.saveNameInput}
+                                    onChange={(e) => this.setState({ saveNameInput: e.target.value })}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') this.saveWithName(this.state.saveNameInput); }}
+                                    maxLength={40}
+                                    autoFocus
+                                />
+                                <button
+                                    className="save-confirm-btn"
+                                    onClick={() => this.saveWithName(this.state.saveNameInput)}
+                                    disabled={!this.state.saveNameInput.trim()}
+                                >
+                                    Save
+                                </button>
+                            </div>
+
+                            {/* Saved list */}
+                            <div className="save-manager-list">
+                                {this.state.savedGrids.length === 0 ? (
+                                    <div className="save-manager-empty">No saved grids yet. Name your creation above!</div>
+                                ) : (
+                                    this.state.savedGrids.map((entry, i) => (
+                                        <div className="save-manager-item" key={i}>
+                                            <div className="save-item-info" onClick={() => this.loadSavedGrid(i)}>
+                                                <span className="save-item-name">{entry.name}</span>
+                                                <span className="save-item-date">{new Date(entry.date).toLocaleDateString()}</span>
+                                            </div>
+                                            <div className="save-item-actions">
+                                                <button className="save-item-btn load" onClick={() => this.loadSavedGrid(i)} title="Load">
+                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z" fill="currentColor"/></svg>
+                                                </button>
+                                                <button className="save-item-btn delete" onClick={() => this.deleteSavedGrid(i)} title="Delete">
+                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Import / Export all */}
+                            <div className="save-manager-footer">
+                                <button className="save-manager-action-btn" onClick={this.exportAllSaves} title="Export all saves as JSON">
+                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
+                                    Export All
+                                </button>
+                                <button className="save-manager-action-btn" onClick={this.importGrid} title="Import from JSON file">
+                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" fill="currentColor"/></svg>
+                                    Import
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
