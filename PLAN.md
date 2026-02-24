@@ -12,7 +12,10 @@
 - [ ] Rename project to **AG16**
 
 ## Audio
-- [ ] Implement browser synth (Web Audio API / Tone.js custom synth engine)
+- [x] Implement per-channel browser synth (Web Audio API, replaced Tone.js)
+- [x] Synth presets: Basic (sine, triangle, square, sawtooth), Instrument (pad, lead, bass, pluck, bell, organ, strings), Percussion (kick, snare, hi-hat, tom, clap, rimshot)
+- [x] Custom synth parameters per channel (waveform, ADSR, cutoff, resonance)
+- [x] Percussion synthesis with pitch variation by grid position
 
 ## Sharing
 - [ ] Fix link sharing functionality

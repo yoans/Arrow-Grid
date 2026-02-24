@@ -1,7 +1,7 @@
 import React from 'react';
 import '../App.css';
 import {range} from 'ramda';
-import * as Tone from 'tone';
+import { resumeAudio, initAudio, playClick, SYNTH_PRESETS, PRESET_GROUPS, ALL_PRESET_KEYS, DEFAULT_SYNTH } from './synth-engine';
 import {
     musicalNotes
 } from './play-notes';
@@ -71,26 +71,12 @@ const generateRandomGrid = () => {
 const generateRandomSpeed = () => 150 + Math.floor(Math.random() * 251); // 150-400ms
 
 
-// Simple click sound using Tone.js
-let clickSynth = null;
-const getClickSynth = () => {
-    if (!clickSynth) {
-        clickSynth = new Tone.Synth({
-            oscillator: { type: 'sine' },
-            envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
-            volume: -20
-        }).toDestination();
-    }
-    return clickSynth;
-};
-
+// Simple click sound using synth engine
 const sound = {
     async play() {
         try {
-            if (Tone.context.state !== 'running') {
-                await Tone.start();
-            }
-            getClickSynth().triggerAttackRelease('C5', 0.02);
+            await initAudio();
+            playClick();
         } catch (e) {
             // Ignore audio errors
         }
@@ -181,16 +167,16 @@ export class Application extends React.Component {
         document.addEventListener('keydown', this.handleKeyDown);
         
         // Resume AudioContext on first user gesture (browsers block autoplay)
-        const resumeAudio = async () => {
-            try { await Tone.start(); } catch (e) { /* ignore */ }
-            document.removeEventListener('pointerdown', resumeAudio);
-            document.removeEventListener('keydown', resumeAudio);
+        const resumeAudioOnGesture = async () => {
+            try { await resumeAudio(); await initAudio(); } catch (e) { /* ignore */ }
+            document.removeEventListener('pointerdown', resumeAudioOnGesture);
+            document.removeEventListener('keydown', resumeAudioOnGesture);
         };
-        document.addEventListener('pointerdown', resumeAudio, { once: false });
-        document.addEventListener('keydown', resumeAudio, { once: false });
+        document.addEventListener('pointerdown', resumeAudioOnGesture, { once: false });
+        document.addEventListener('keydown', resumeAudioOnGesture, { once: false });
         this._resumeAudioCleanup = () => {
-            document.removeEventListener('pointerdown', resumeAudio);
-            document.removeEventListener('keydown', resumeAudio);
+            document.removeEventListener('pointerdown', resumeAudioOnGesture);
+            document.removeEventListener('keydown', resumeAudioOnGesture);
         };
         
         // Click outside to close volume popup
@@ -289,11 +275,11 @@ export class Application extends React.Component {
                 break;
             case 'ArrowUp':
                 e.preventDefault();
-                this.newInputDirection((this.state.inputDirection + 3) % 4, -1);
+                this.setState({ arrowChannel: this.state.arrowChannel > 1 ? this.state.arrowChannel - 1 : MAX_CHANNELS });
                 break;
             case 'ArrowDown':
                 e.preventDefault();
-                this.newInputDirection((this.state.inputDirection + 1) % 4, 1);
+                this.setState({ arrowChannel: this.state.arrowChannel < MAX_CHANNELS ? this.state.arrowChannel + 1 : 1 });
                 break;
             case 'Digit1':
                 this.setState({ inputNumber: 1 });
@@ -513,10 +499,29 @@ export class Application extends React.Component {
     // ── Randomize ──
     randomizeGrid = () => {
         this._pushUndo();
+        const tonalKeys = ALL_PRESET_KEYS.filter(k => !SYNTH_PRESETS[k].isPercussion);
+        const RAND_ICON_MAP = {
+            sine: 'sine', triangle: 'triangle', square: 'square', sawtooth: 'saw',
+            pad: 'pad', lead: 'lead', bass: 'bass', pluck: 'guitar',
+            bell: 'bell', organ: 'organ', strings: 'strings',
+        };
+        const newChannelSettings = { ...this.state.channelSettings };
+        for (let ch = 1; ch <= MAX_CHANNELS; ch++) {
+            const prev = newChannelSettings[ch] || createChannelSettings(ch);
+            const key = tonalKeys[Math.floor(Math.random() * tonalKeys.length)];
+            const p = SYNTH_PRESETS[key];
+            newChannelSettings[ch] = {
+                ...prev,
+                synthPreset: key,
+                icon: RAND_ICON_MAP[key] || prev.icon || 'piano',
+                synth: { waveform: p.waveform, attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release, cutoff: p.cutoff, resonance: p.resonance },
+            };
+        }
         this.setState({
             grid: generateRandomGrid(),
             noteLength: generateRandomSpeed(),
             currentPreset: -1,
+            channelSettings: newChannelSettings,
         });
     }
 
@@ -572,7 +577,8 @@ export class Application extends React.Component {
         const willEnable = !this.state.soundOn;
         if (willEnable) {
             try {
-                await Tone.start();
+                await resumeAudio();
+                await initAudio();
             } catch (e) { /* ignore */ }
         }
         localStorage.setItem('arrowgrid-sound', willEnable ? 'on' : 'off');
@@ -888,7 +894,10 @@ export class Application extends React.Component {
         
         return (
             <div className="app-container">
-                <div className="console-wrapper">
+                <div className="console-wrapper" style={{
+                    '--ch-color': `rgb(${(CHANNEL_COLORS[this.state.arrowChannel] || CHANNEL_COLORS[1]).join(',')})`,
+                    '--ch-color-glow': `rgba(${(CHANNEL_COLORS[this.state.arrowChannel] || CHANNEL_COLORS[1]).join(',')}, 0.25)`,
+                }}>
                     {/* ── Header ── */}
                     <header className="console-header">
                         <h1 className="app-title">
@@ -973,7 +982,7 @@ export class Application extends React.Component {
                                 onClick={this.midiToggle}
                                 title={this.state.midiOn ? "Disable MIDI" : "Enable MIDI"}
                             >
-                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M21 3H3v18h18V3zm-2 16H5V5h14v14zM7 7h2v10H7V7zm4 0h2v10h-2V7zm4 0h2v10h-2V7z" fill="currentColor"/></svg>
+                                <svg viewBox="93 201 72 71" width="20" height="20"><path d="M 120.27106,271.98996 C 107.53249,269.14054 97.277428,258.6105 93.933365,244.94606 l -0.614486,-2.5109 0.01732,-5.28611 0.01732,-5.28611 0.565808,-2.28831 c 1.182135,-4.78093 3.08103,-9.08676 5.681377,-12.88278 l 1.376046,-2.00877 2.64306,-2.64305 2.64305,-2.64306 2.00878,-1.37605 c 3.86216,-2.64566 8.02214,-4.46924 12.92448,-5.66562 l 2.5109,-0.61277 h 5.15396 5.15395 l 2.51091,0.61277 c 4.90234,1.19638 9.06232,3.01996 12.92448,5.66562 l 2.00878,1.37605 2.64305,2.64306 2.64306,2.64305 1.37605,2.00877 c 2.64565,3.86216 4.46924,8.02214 5.66562,12.92449 l 0.61276,2.5109 v 5.15396 5.15396 l -0.61276,2.5109 c -1.19638,4.90235 -3.01997,9.06233 -5.66562,12.92448 l -1.37605,2.00878 -2.64306,2.64305 -2.64305,2.64306 -2.00878,1.37605 c -3.62697,2.48455 -9.16861,4.95456 -12.29409,5.4797 l -1.08759,0.18274 -0.29925,-1.1405 -0.29924,-1.14049 -0.90795,-1.22726 -0.90794,-1.22726 -1.49136,-0.72966 -1.49137,-0.72965 -1.27281,-0.1223 -1.27281,-0.12231 -1.33137,0.44221 c -0.73225,0.24322 -1.79683,0.77939 -2.36572,1.19149 l -1.03435,0.74928 -0.67068,1.15204 c -0.36887,0.63361 -0.75402,1.53857 -0.85587,2.01102 l -0.18519,0.85899 -0.44154,-0.0307 c -0.24284,-0.0169 -0.6794,-0.0839 -0.97014,-0.1489 z M 105.84353,240.2552 c 0.376,-0.27537 0.89801,-0.9085 1.16002,-1.40696 l 0.47637,-0.90628 -0.12219,-1.00121 c -0.22347,-1.83103 -1.43429,-3.04185 -3.26531,-3.26531 l -1.00122,-0.1222 -0.9198,0.47638 -0.9198,0.47637 -0.59996,0.89808 -0.59995,0.89808 v 0.97905 0.97905 l 0.59995,0.89808 0.59996,0.89808 0.9198,0.47637 0.9198,0.47638 1.03434,-0.12664 1.03434,-0.12664 z m 50.13146,0.075 c 0.36482,-0.23904 0.89506,-0.8147 1.17831,-1.27925 l 0.51501,-0.84463 9.9e-4,-0.95206 9.8e-4,-0.95206 -0.59995,-0.89808 -0.59996,-0.89808 -0.9198,-0.47637 -0.9198,-0.47638 -1.03434,0.12664 -1.03434,0.12663 -0.68364,0.50068 c -0.37601,0.27538 -0.89802,0.90851 -1.16002,1.40696 l -0.47638,0.90629 0.12664,1.03433 0.12663,1.03434 0.50068,0.68365 c 0.27538,0.37601 0.90851,0.89801 1.40696,1.16002 l 0.90628,0.47638 1.00122,-0.1222 c 0.55067,-0.0672 1.29971,-0.31777 1.66453,-0.55681 z m -42.52181,-18.44154 0.92852,-0.92852 0.13283,-1.17849 0.13283,-1.17849 -0.42061,-0.81338 c -0.54759,-1.05893 -1.58867,-1.86255 -2.67753,-2.06682 l -0.87119,-0.16344 -1.22674,0.54265 -1.22674,0.54264 -0.54491,1.23186 -0.54491,1.23186 0.1626,0.813 c 0.22216,1.11082 0.81643,1.95463 1.82118,2.58594 l 0.84463,0.53071 1.28076,-0.1105 1.28075,-0.1105 z m 35.25771,0.52014 0.89808,-0.59996 0.47483,-0.9198 0.47483,-0.9198 -0.15369,-1.0294 c -0.0845,-0.56617 -0.38891,-1.35973 -0.6764,-1.76348 l -0.52271,-0.73408 -1.19473,-0.45627 -1.19474,-0.45627 -1.02904,0.30831 -1.02905,0.30831 -0.68032,0.80851 c -0.82709,0.98294 -1.05834,1.81378 -0.85449,3.06998 l 0.15449,0.95197 0.73676,0.77912 c 0.89156,0.94283 1.49407,1.21403 2.74604,1.23606 l 0.95206,0.0168 z m -17.86122,-7.17694 c 0.90683,-0.59418 1.47417,-1.54818 1.61708,-2.71918 l 0.12219,-1.00122 -0.47637,-0.9198 -0.47637,-0.9198 -0.89808,-0.59995 -0.89808,-0.59996 h -0.97905 -0.97905 l -0.89808,0.59996 -0.89808,0.59995 -0.47637,0.9198 -0.47638,0.9198 0.12664,1.03434 0.12663,1.03434 0.50068,0.68365 c 0.27538,0.376 0.90851,0.89801 1.40696,1.16002 l 0.90628,0.47637 1.00122,-0.12219 c 0.55067,-0.0672 1.29237,-0.31296 1.64823,-0.54613 z" fill="currentColor"/></svg>
                                 <span>MIDI</span>
                             </button>
                         </div>
@@ -1115,8 +1124,9 @@ export class Application extends React.Component {
                                                             this.setState({ activePopup: null, progModalSnapshot: null, progCloseConfirm: false });
                                                         } else {
                                                             this.setState({
+                                                                arrowChannel: ch,
                                                                 activePopup: `prog-${ch}`,
-                                                                progModalSnapshot: { ...settings },
+                                                                progModalSnapshot: { ...settings, synth: settings.synth ? { ...settings.synth } : undefined },
                                                                 progInputText: String(settings.program ?? 0),
                                                                 progCloseConfirm: false,
                                                             });
@@ -1135,11 +1145,16 @@ export class Application extends React.Component {
                                 const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
                                 const progNum = settings.program ?? 0;
                                 const iconKey = settings.icon || 'piano';
+                                const presetKey = settings.synthPreset || 'sine';
+                                const preset = SYNTH_PRESETS[presetKey] || SYNTH_PRESETS.sine;
+                                const isPerc = preset && preset.isPercussion;
+                                const synthParams = settings.synth || { ...DEFAULT_SYNTH };
                                 const snapshot = this.state.progModalSnapshot;
                                 const hasChanges = snapshot && (
                                     snapshot.program !== settings.program ||
                                     snapshot.icon !== (settings.icon || 'piano') ||
-                                    snapshot.synthType !== (settings.synthType || 'default')
+                                    snapshot.synthPreset !== (settings.synthPreset || 'sine') ||
+                                    JSON.stringify(snapshot.synth) !== JSON.stringify(settings.synth)
                                 );
                                 const ICONS = [
                                     ['piano', '🎹', 'Piano'],
@@ -1159,22 +1174,43 @@ export class Application extends React.Component {
                                     ['square', '🔲', 'Square'],
                                     ['saw', '🪚', 'Saw'],
                                     ['sine', '🌀', 'Sine'],
+                                    ['triangle', '🔺', 'Triangle'],
                                     ['noise', '🌫️', 'Noise'],
                                     ['strings', '🎼', 'Strings'],
                                     ['perc', '🪘', 'Percussion'],
+                                    ['clap', '👏', 'Clap'],
                                     ['synth', '🎛️', 'Synth'],
                                     ['keys', '🎵', 'Keys'],
                                 ];
-                                const QUICK_SYNTHS = [
-                                    ['default', 'Default'],
-                                    ['am', 'AM Synth'],
-                                    ['fm', 'FM Synth'],
-                                    ['membrane', 'Membrane'],
-                                    ['metal', 'Metallic'],
-                                    ['pluck', 'Pluck'],
-                                    ['mono', 'Mono Synth'],
-                                    ['duo', 'Duo Synth'],
-                                ];
+                                const PRESET_ICON_MAP = {
+                                    sine: 'sine', triangle: 'triangle', square: 'square', sawtooth: 'saw',
+                                    pad: 'pad', lead: 'lead', bass: 'bass', pluck: 'guitar',
+                                    bell: 'bell', organ: 'organ', strings: 'strings',
+                                    kick: 'drums', snare: 'drums', hihat: 'perc', tom: 'drums',
+                                    clap: 'clap', rim: 'perc',
+                                };
+                                const applyPreset = (key) => {
+                                    const p = SYNTH_PRESETS[key];
+                                    if (!p) return;
+                                    const newSettings = { ...this.state.channelSettings };
+                                    const icon = PRESET_ICON_MAP[key] || settings.icon || 'piano';
+                                    if (p.isPercussion) {
+                                        newSettings[ch] = { ...settings, synthPreset: key, icon };
+                                    } else {
+                                        newSettings[ch] = { ...settings, synthPreset: key, icon, synth: { waveform: p.waveform, attack: p.attack, decay: p.decay, sustain: p.sustain, release: p.release, cutoff: p.cutoff, resonance: p.resonance } };
+                                    }
+                                    this.setState({ channelSettings: newSettings });
+                                };
+                                const updateSynth = (param, value) => {
+                                    const newSettings = { ...this.state.channelSettings };
+                                    newSettings[ch] = { ...settings, synth: { ...synthParams, [param]: value } };
+                                    this.setState({ channelSettings: newSettings });
+                                };
+                                const nudgePreset = (delta) => {
+                                    const idx = ALL_PRESET_KEYS.indexOf(presetKey);
+                                    const next = ((idx + delta) % ALL_PRESET_KEYS.length + ALL_PRESET_KEYS.length) % ALL_PRESET_KEYS.length;
+                                    applyPreset(ALL_PRESET_KEYS[next]);
+                                };
                                 const sendProg = (val) => {
                                     const clamped = Math.max(0, Math.min(127, val));
                                     const newSettings = { ...this.state.channelSettings };
@@ -1216,11 +1252,11 @@ export class Application extends React.Component {
                                             }}
                                         >
                                             <div className="prog-modal-header">
-                                                <strong>Channel {ch} — Program / Sound Selection</strong>
+                                                <strong>Channel {ch} — Sound</strong>
                                                 <button className="prog-modal-close" onClick={closeX} title="Close">✕</button>
                                             </div>
 
-                                            {/* Section: Icon Selection (above group labels) */}
+                                            {/* Section: Icon Selection */}
                                             <div className="prog-section">
                                                 <div className="prog-section-label">Icon</div>
                                                 <div className="prog-icon-grid">
@@ -1239,59 +1275,89 @@ export class Application extends React.Component {
                                                 </div>
                                             </div>
 
-                                            {/* ── Local Synth ── */}
-                                            <div className="prog-group-label">🔊 Local Synth</div>
+                                            {/* ── Synth Preset ── */}
+                                            <div className="prog-group-label"><svg viewBox="0 0 24 24" width="14" height="14" style={{verticalAlign: '-2px', marginRight: '5px'}}><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>Synth</div>
 
-                                            {/* Section 2: Custom Browser Synth (TODO) */}
                                             <div className="prog-section">
-                                                <div className="prog-section-label">Custom Browser Synth</div>
+                                                <div className="prog-section-label">Preset</div>
                                                 <div className="prog-synth-select-row">
-                                                    <button
-                                                        className="key-nudge-btn"
-                                                        onClick={() => {
-                                                            const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
-                                                            const prev = ((idx - 1) % QUICK_SYNTHS.length + QUICK_SYNTHS.length) % QUICK_SYNTHS.length;
-                                                            const newSettings = { ...this.state.channelSettings };
-                                                            newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[prev][0] };
-                                                            this.setState({ channelSettings: newSettings });
-                                                        }}
-                                                        title="Previous synth"
-                                                    >◀</button>
+                                                    <button className="key-nudge-btn" onClick={() => nudgePreset(-1)} title="Previous preset">◀</button>
                                                     <select
                                                         className="sel prog-synth-sel"
-                                                        value={settings.synthType || 'default'}
-                                                        onChange={(e) => {
-                                                            const newSettings = { ...this.state.channelSettings };
-                                                            newSettings[ch] = { ...settings, synthType: e.target.value };
-                                                            this.setState({ channelSettings: newSettings });
-                                                        }}
+                                                        value={presetKey}
+                                                        onChange={(e) => applyPreset(e.target.value)}
                                                     >
-                                                        {QUICK_SYNTHS.map(([key, label]) => (
-                                                            <option key={key} value={key}>{label}</option>
+                                                        {PRESET_GROUPS.map(group => (
+                                                            <optgroup key={group.label} label={group.label}>
+                                                                {group.keys.map(k => (
+                                                                    <option key={k} value={k}>{SYNTH_PRESETS[k].name}</option>
+                                                                ))}
+                                                            </optgroup>
                                                         ))}
                                                     </select>
-                                                    <button
-                                                        className="key-nudge-btn"
-                                                        onClick={() => {
-                                                            const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
-                                                            const next = (idx + 1) % QUICK_SYNTHS.length;
-                                                            const newSettings = { ...this.state.channelSettings };
-                                                            newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[next][0] };
-                                                            this.setState({ channelSettings: newSettings });
-                                                        }}
-                                                        title="Next synth"
-                                                    >▶</button>
+                                                    <button className="key-nudge-btn" onClick={() => nudgePreset(1)} title="Next preset">▶</button>
                                                 </div>
-                                                <p className="prog-section-hint">Per-channel synth engine — coming soon</p>
+                                            </div>
+
+                                            {/* ── Synth Parameters / Percussion hint ── */}
+                                            <div className="prog-section">
+                                                {!isPerc ? (
+                                                    <details className="synth-params-details">
+                                                        <summary className="prog-section-label synth-params-toggle">Parameters</summary>
+                                                    <div className="synth-params-body"><div className="synth-params">
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Waveform</span>
+                                                            <select className="sel synth-waveform-sel" value={synthParams.waveform || 'sine'} onChange={(e) => updateSynth('waveform', e.target.value)}>
+                                                                <option value="sine">Sine</option>
+                                                                <option value="triangle">Triangle</option>
+                                                                <option value="square">Square</option>
+                                                                <option value="sawtooth">Sawtooth</option>
+                                                            </select>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Attack</span>
+                                                            <input type="range" className="synth-slider" min="0.001" max="1" step="0.001" value={synthParams.attack} onChange={(e) => updateSynth('attack', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{synthParams.attack.toFixed(3)}</span>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Decay</span>
+                                                            <input type="range" className="synth-slider" min="0.001" max="1" step="0.001" value={synthParams.decay} onChange={(e) => updateSynth('decay', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{synthParams.decay.toFixed(3)}</span>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Sustain</span>
+                                                            <input type="range" className="synth-slider" min="0" max="1" step="0.01" value={synthParams.sustain} onChange={(e) => updateSynth('sustain', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{synthParams.sustain.toFixed(2)}</span>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Release</span>
+                                                            <input type="range" className="synth-slider" min="0.01" max="2" step="0.01" value={synthParams.release} onChange={(e) => updateSynth('release', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{synthParams.release.toFixed(2)}</span>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Cutoff</span>
+                                                            <input type="range" className="synth-slider" min="100" max="10000" step="10" value={synthParams.cutoff} onChange={(e) => updateSynth('cutoff', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{Math.round(synthParams.cutoff)}</span>
+                                                        </label>
+                                                        <label className="synth-param-row">
+                                                            <span className="synth-param-name">Resonance</span>
+                                                            <input type="range" className="synth-slider" min="0.1" max="15" step="0.1" value={synthParams.resonance} onChange={(e) => updateSynth('resonance', parseFloat(e.target.value))} />
+                                                            <span className="synth-param-val">{synthParams.resonance.toFixed(1)}</span>
+                                                        </label>
+                                                    </div></div>
+                                                    </details>
+                                                ) : (
+                                                    <div className="prog-section-label synth-params-toggle perc-hint-row">Percussion — pitch varies by grid position</div>
+                                                )}
                                             </div>
 
                                             {/* ── External MIDI ── */}
-                                            <div className="prog-group-label">🎹 External MIDI</div>
+                                            <div className="prog-group-label"><svg viewBox="93 201 72 71" width="18" height="18" style={{verticalAlign: '-3px', marginRight: '5px'}}><path d="M 120.27106,271.98996 C 107.53249,269.14054 97.277428,258.6105 93.933365,244.94606 l -0.614486,-2.5109 0.01732,-5.28611 0.01732,-5.28611 0.565808,-2.28831 c 1.182135,-4.78093 3.08103,-9.08676 5.681377,-12.88278 l 1.376046,-2.00877 2.64306,-2.64305 2.64305,-2.64306 2.00878,-1.37605 c 3.86216,-2.64566 8.02214,-4.46924 12.92448,-5.66562 l 2.5109,-0.61277 h 5.15396 5.15395 l 2.51091,0.61277 c 4.90234,1.19638 9.06232,3.01996 12.92448,5.66562 l 2.00878,1.37605 2.64305,2.64306 2.64306,2.64305 1.37605,2.00877 c 2.64565,3.86216 4.46924,8.02214 5.66562,12.92449 l 0.61276,2.5109 v 5.15396 5.15396 l -0.61276,2.5109 c -1.19638,4.90235 -3.01997,9.06233 -5.66562,12.92448 l -1.37605,2.00878 -2.64306,2.64305 -2.64305,2.64306 -2.00878,1.37605 c -3.62697,2.48455 -9.16861,4.95456 -12.29409,5.4797 l -1.08759,0.18274 -0.29925,-1.1405 -0.29924,-1.14049 -0.90795,-1.22726 -0.90794,-1.22726 -1.49136,-0.72966 -1.49137,-0.72965 -1.27281,-0.1223 -1.27281,-0.12231 -1.33137,0.44221 c -0.73225,0.24322 -1.79683,0.77939 -2.36572,1.19149 l -1.03435,0.74928 -0.67068,1.15204 c -0.36887,0.63361 -0.75402,1.53857 -0.85587,2.01102 l -0.18519,0.85899 -0.44154,-0.0307 c -0.24284,-0.0169 -0.6794,-0.0839 -0.97014,-0.1489 z M 105.84353,240.2552 c 0.376,-0.27537 0.89801,-0.9085 1.16002,-1.40696 l 0.47637,-0.90628 -0.12219,-1.00121 c -0.22347,-1.83103 -1.43429,-3.04185 -3.26531,-3.26531 l -1.00122,-0.1222 -0.9198,0.47638 -0.9198,0.47637 -0.59996,0.89808 -0.59995,0.89808 v 0.97905 0.97905 l 0.59995,0.89808 0.59996,0.89808 0.9198,0.47637 0.9198,0.47638 1.03434,-0.12664 1.03434,-0.12664 z m 50.13146,0.075 c 0.36482,-0.23904 0.89506,-0.8147 1.17831,-1.27925 l 0.51501,-0.84463 9.9e-4,-0.95206 9.8e-4,-0.95206 -0.59995,-0.89808 -0.59996,-0.89808 -0.9198,-0.47637 -0.9198,-0.47638 -1.03434,0.12664 -1.03434,0.12663 -0.68364,0.50068 c -0.37601,0.27538 -0.89802,0.90851 -1.16002,1.40696 l -0.47638,0.90629 0.12664,1.03433 0.12663,1.03434 0.50068,0.68365 c 0.27538,0.37601 0.90851,0.89801 1.40696,1.16002 l 0.90628,0.47638 1.00122,-0.1222 c 0.55067,-0.0672 1.29971,-0.31777 1.66453,-0.55681 z m -42.52181,-18.44154 0.92852,-0.92852 0.13283,-1.17849 0.13283,-1.17849 -0.42061,-0.81338 c -0.54759,-1.05893 -1.58867,-1.86255 -2.67753,-2.06682 l -0.87119,-0.16344 -1.22674,0.54265 -1.22674,0.54264 -0.54491,1.23186 -0.54491,1.23186 0.1626,0.813 c 0.22216,1.11082 0.81643,1.95463 1.82118,2.58594 l 0.84463,0.53071 1.28076,-0.1105 1.28075,-0.1105 z m 35.25771,0.52014 0.89808,-0.59996 0.47483,-0.9198 0.47483,-0.9198 -0.15369,-1.0294 c -0.0845,-0.56617 -0.38891,-1.35973 -0.6764,-1.76348 l -0.52271,-0.73408 -1.19473,-0.45627 -1.19474,-0.45627 -1.02904,0.30831 -1.02905,0.30831 -0.68032,0.80851 c -0.82709,0.98294 -1.05834,1.81378 -0.85449,3.06998 l 0.15449,0.95197 0.73676,0.77912 c 0.89156,0.94283 1.49407,1.21403 2.74604,1.23606 l 0.95206,0.0168 z m -17.86122,-7.17694 c 0.90683,-0.59418 1.47417,-1.54818 1.61708,-2.71918 l 0.12219,-1.00122 -0.47637,-0.9198 -0.47637,-0.9198 -0.89808,-0.59995 -0.89808,-0.59996 h -0.97905 -0.97905 l -0.89808,0.59996 -0.89808,0.59995 -0.47637,0.9198 -0.47638,0.9198 0.12664,1.03434 0.12663,1.03434 0.50068,0.68365 c 0.27538,0.376 0.90851,0.89801 1.40696,1.16002 l 0.90628,0.47637 1.00122,-0.12219 c 0.55067,-0.0672 1.29237,-0.31296 1.64823,-0.54613 z" fill="currentColor"/></svg>External MIDI</div>
 
-                                            {/* Section 3: MIDI Program Selection */}
+                                            {/* MIDI Program Selection */}
                                             <div className="prog-section">
                                                 <div className="prog-section-label">MIDI Program</div>
-                                                <p className="prog-section-hint">Select a sound or set a sound on a remote / USB-connected MIDI device</p>
+                                                <p className="prog-section-hint">Set a sound on a remote / USB-connected MIDI device</p>
                                                 <div className="prog-modal-input-row">
                                                     <button
                                                         className="prog-inc-btn"
@@ -1339,7 +1405,9 @@ export class Application extends React.Component {
                                             {/* Footer: OK / Cancel */}
                                             <div className="prog-modal-footer">
                                                 <button className="prog-footer-btn prog-btn-cancel" onClick={closeCancel} title="Revert all changes and close">Cancel</button>
-                                                <button className="prog-footer-btn prog-btn-ok" onClick={closeOk} title="Keep changes and close">OK</button>
+                                                <button className="prog-footer-btn prog-btn-ok" onClick={closeOk} title="Keep changes and close"
+                                                    style={{ color: (() => { const c = CHANNEL_COLORS[ch] || CHANNEL_COLORS[1]; return (c[0]*0.299 + c[1]*0.587 + c[2]*0.114) > 186 ? '#000' : '#fff'; })() }}
+                                                >OK</button>
                                             </div>
                                         </div>
                                     </div>

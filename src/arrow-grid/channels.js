@@ -58,13 +58,16 @@ export const CHANNEL_LABELS = [
     'Ch 16',
 ];
 
+import { DEFAULT_SYNTH } from './synth-engine';
+
 // Default channel settings
 export const DEFAULT_CHANNEL_SETTINGS = {
     volume: 1.0,        // 0.0–1.0
     midiChannel: null,   // MIDI channel (1-16), null = same as channel id
     muted: false,        // whether this channel is muted
     program: 0,          // MIDI program number (0-127), 0 = Acoustic Grand Piano
-    synthType: 'default', // browser synth type (for future per-channel synth config)
+    synthPreset: 'sine', // key from SYNTH_PRESETS
+    synth: { ...DEFAULT_SYNTH }, // per-channel synth parameters
     icon: 'piano',       // mnemonic icon key for quick visual reference
 };
 
@@ -73,6 +76,7 @@ export const DEFAULT_CHANNEL_SETTINGS = {
  */
 export const createChannelSettings = (channelId) => ({
     ...DEFAULT_CHANNEL_SETTINGS,
+    synth: { ...DEFAULT_SYNTH },
     midiChannel: channelId,  // default MIDI channel = channel id
 });
 

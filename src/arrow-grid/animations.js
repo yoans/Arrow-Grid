@@ -53,7 +53,14 @@ let sketchInstance = null;
 // Theme colors — channel-based
 import { getChannelColor, getChannelPreviewColor, getChannelParticleColor } from './channels';
 
-const wallColor = [102, 126, 234, 220]; // Walls always accent blue
+const wallColor = [102, 126, 234, 220]; // fallback
+const getWallColor = () => {
+    if (stateDrawing && stateDrawing.arrowChannel) {
+        const c = getChannelParticleColor(stateDrawing.arrowChannel);
+        return [c[0], c[1], c[2], 220];
+    }
+    return wallColor;
+};
 
 // Map arrow.noteLength (ms) to a visual "fill fraction" 0.0–1.0
 // Short notes (32nd = 63ms) → small inner mark, long notes → full fill
@@ -351,7 +358,8 @@ export const setUpCanvas = (state) => {
             sketch.rect(gridCanvasBorderSize, gridCanvasBorderSize, gridCanvasSize, gridCanvasSize);
             sketch.noFill();
             sketch.strokeWeight(gridCanvasBorderSize*2);
-            sketch.stroke(102, 126, 234, 100); // --accent-purple border
+            const wc = getWallColor();
+            sketch.stroke(wc[0], wc[1], wc[2], 100); // channel-colored border
             sketch.rect(0, 0, gridCanvasSize+gridCanvasBorderSize*2, gridCanvasSize+gridCanvasBorderSize*2);
 
             sketch.pop();
@@ -372,7 +380,8 @@ export const setUpCanvas = (state) => {
             const walls = stateDrawing.grid.walls || [];
             if (walls.length > 0) {
                 sketch.push();
-                sketch.stroke(102, 126, 234, 220); // accent-purple, bright
+                const wc = getWallColor();
+                sketch.stroke(wc[0], wc[1], wc[2], 220); // channel-colored walls
                 sketch.strokeWeight(gridCanvasBorderSize * 1.5);
                 sketch.strokeCap(sketch.SQUARE);
                 for (const wallKey of walls) {
@@ -492,7 +501,8 @@ export const setUpCanvas = (state) => {
                         const baseSides = [...stateDrawing.wallSides];
                         const placements = getSymmetricPlacements(hoverCellX, hoverCellY, { sides: baseSides }, wallFlips);
                         sketch.push();
-                        sketch.stroke(102, 126, 234, 80);
+                        const wcp = getWallColor();
+                        sketch.stroke(wcp[0], wcp[1], wcp[2], 80);
                         sketch.strokeWeight(gridCanvasBorderSize * 1.5);
                         sketch.strokeCap(sketch.SQUARE);
                         for (const p of placements) {
@@ -518,7 +528,8 @@ export const setUpCanvas = (state) => {
                             else { baseSide = 'right'; }
                             const placements = getSymmetricPlacements(baseCX, baseCY, { sides: [baseSide] }, wallFlips);
                             sketch.push();
-                            sketch.stroke(102, 126, 234, 80);
+                            const wcc = getWallColor();
+                            sketch.stroke(wcc[0], wcc[1], wcc[2], 80);
                             sketch.strokeWeight(gridCanvasBorderSize * 1.5);
                             sketch.strokeCap(sketch.SQUARE);
                             for (const p of placements) {
