@@ -1074,6 +1074,11 @@ export class Application extends React.Component {
                                     <h3>Channels</h3>
                                 </div>
                                 {/* Channel buttons */}
+                                <div className="channel-list-body">
+                                <div className="ch-select-arrow" style={{
+                                    top: `${((this.state.arrowChannel - 1) / MAX_CHANNELS) * 100 + (100 / MAX_CHANNELS / 2)}%`,
+                                    color: `rgb(${(CHANNEL_COLORS[this.state.arrowChannel] || CHANNEL_COLORS[1]).join(',')})`
+                                }}>&#9654;</div>
                                 {Array.from({ length: MAX_CHANNELS }, (_, i) => i + 1).map(ch => {
                                     const settings = this.state.channelSettings[ch] || createChannelSettings(ch);
                                     const isMuted = settings.muted || false;
@@ -1138,6 +1143,7 @@ export class Application extends React.Component {
                                         </div>
                                     );
                                 })}
+                                </div>
                             </div>
                             {/* Program / Sound Selection modal */}
                             {typeof this.state.activePopup === 'string' && this.state.activePopup.startsWith('prog-') && (() => {

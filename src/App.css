@@ -577,12 +577,35 @@ body {
 .channel-row {
   display: flex;
   flex-direction: column;
-  gap: 1px;
   width: 100%;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
+
+/* Items-only wrapper — hosts the sliding arrow indicator */
+.channel-list-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Animated right-pointing triangle that slides to the selected channel */
+.ch-select-arrow {
+  position: absolute;
+  left: 0px;/*keep at 0 until we work around this arrow not rendering right */
+  transform: translateY(-50%);
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+  transition: top 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.25s ease;
+}
+
 .channel-header {
   display: flex;
   align-items: center;

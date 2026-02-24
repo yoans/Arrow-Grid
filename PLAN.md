@@ -41,6 +41,10 @@
 - [ ] Custom domain setup
 - [ ] Analytics verified working
 
+## Nice to Maybe Have
+- [ ] Enable/disable both sound and MIDI app-wide from inside the channel popup
+- [ ] Pull channel enable/disable and volume controls into the channel popup
+
 ## Release
 - [ ] Deploy to production
 - [ ] Announce launch
