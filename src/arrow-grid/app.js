@@ -155,6 +155,7 @@ export class Application extends React.Component {
             toast: null,
             savedGrids: JSON.parse(localStorage.getItem('arrowgrid-saves') || '[]'),
             showSaveManager: false,
+            confirmDeleteIndex: null,
             saveNameInput: '',
             showInfo: false,
             showMidiHelp: false,
@@ -420,6 +421,7 @@ export class Application extends React.Component {
         const name = saves[index]?.name;
         saves.splice(index, 1);
         this._persistSaves(saves);
+        this.setState({ confirmDeleteIndex: null });
         this._showToast(`Deleted "${name}"`);
     }
 
@@ -864,10 +866,8 @@ export class Application extends React.Component {
     nudgeScale = (delta) => {
         const currentStr = this.state.scale.toString();
         const idx = scales.findIndex(s => s.value.toString() === currentStr);
-        const nextIdx = idx + delta;
-        if (nextIdx >= 0 && nextIdx < scales.length) {
-            this.setState({ scale: scales[nextIdx].value });
-        }
+        const nextIdx = ((idx + delta) % scales.length + scales.length) % scales.length;
+        this.setState({ scale: scales[nextIdx].value });
     };
 
     updateMusicalKey = (event) => {
@@ -875,10 +875,9 @@ export class Application extends React.Component {
     };
 
     nudgeMusicalKey = (delta) => {
-        const next = this.state.musicalKey + delta;
-        if (next >= 21 && next <= 108) {
-            this.setState({ musicalKey: next });
-        }
+        const range = 108 - 21 + 1;
+        const next = 21 + ((this.state.musicalKey - 21 + delta) % range + range) % range;
+        this.setState({ musicalKey: next });
     };
 
     render() {
@@ -1249,14 +1248,12 @@ export class Application extends React.Component {
                                                 <div className="prog-synth-select-row">
                                                     <button
                                                         className="key-nudge-btn"
-                                                        disabled={QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default')) <= 0}
                                                         onClick={() => {
                                                             const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
-                                                            if (idx > 0) {
-                                                                const newSettings = { ...this.state.channelSettings };
-                                                                newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[idx - 1][0] };
-                                                                this.setState({ channelSettings: newSettings });
-                                                            }
+                                                            const prev = ((idx - 1) % QUICK_SYNTHS.length + QUICK_SYNTHS.length) % QUICK_SYNTHS.length;
+                                                            const newSettings = { ...this.state.channelSettings };
+                                                            newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[prev][0] };
+                                                            this.setState({ channelSettings: newSettings });
                                                         }}
                                                         title="Previous synth"
                                                     >◀</button>
@@ -1275,14 +1272,12 @@ export class Application extends React.Component {
                                                     </select>
                                                     <button
                                                         className="key-nudge-btn"
-                                                        disabled={QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default')) >= QUICK_SYNTHS.length - 1}
                                                         onClick={() => {
                                                             const idx = QUICK_SYNTHS.findIndex(([k]) => k === (settings.synthType || 'default'));
-                                                            if (idx < QUICK_SYNTHS.length - 1) {
-                                                                const newSettings = { ...this.state.channelSettings };
-                                                                newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[idx + 1][0] };
-                                                                this.setState({ channelSettings: newSettings });
-                                                            }
+                                                            const next = (idx + 1) % QUICK_SYNTHS.length;
+                                                            const newSettings = { ...this.state.channelSettings };
+                                                            newSettings[ch] = { ...settings, synthType: QUICK_SYNTHS[next][0] };
+                                                            this.setState({ channelSettings: newSettings });
                                                         }}
                                                         title="Next synth"
                                                     >▶</button>
@@ -1300,8 +1295,7 @@ export class Application extends React.Component {
                                                 <div className="prog-modal-input-row">
                                                     <button
                                                         className="prog-inc-btn"
-                                                        onClick={() => sendProg(progNum - 1)}
-                                                        disabled={progNum <= 0}
+                                                        onClick={() => sendProg(((progNum - 1) % 128 + 128) % 128)}
                                                         title="Previous program"
                                                     >◀</button>
                                                     <input
@@ -1323,8 +1317,7 @@ export class Application extends React.Component {
                                                     />
                                                     <button
                                                         className="prog-inc-btn"
-                                                        onClick={() => sendProg(progNum + 1)}
-                                                        disabled={progNum >= 127}
+                                                        onClick={() => sendProg((progNum + 1) % 128)}
                                                         title="Next program"
                                                     >▶</button>
                                                 </div>
@@ -1630,7 +1623,7 @@ export class Application extends React.Component {
                     <footer className="console-footer">
                         <div className="footer-group">
                             <label>Scale</label>
-                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(-1)} disabled={scales.findIndex(s => s.value.toString() === this.state.scale.toString()) <= 0} title="Previous scale">▼</button>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(-1)} title="Previous scale">▼</button>
                             <select 
                                 className="sel"
                                 value={this.state.scale.toString()} 
@@ -1646,11 +1639,11 @@ export class Application extends React.Component {
                                     </optgroup>
                                 ))}
                             </select>
-                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(1)} disabled={scales.findIndex(s => s.value.toString() === this.state.scale.toString()) >= scales.length - 1} title="Next scale">▲</button>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeScale(1)} title="Next scale">▲</button>
                         </div>
                         <div className="footer-group">
                             <label>Key</label>
-                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(-1)} disabled={this.state.musicalKey <= 21} title="Key down">▼</button>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(-1)} title="Key down">▼</button>
                             <select 
                                 className="sel"
                                 value={this.state.musicalKey} 
@@ -1662,7 +1655,7 @@ export class Application extends React.Component {
                                     </option>
                                 ))}
                             </select>
-                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(1)} disabled={this.state.musicalKey >= 108} title="Key up">▲</button>
+                            <button className="key-nudge-btn" onClick={() => this.nudgeMusicalKey(1)} title="Key up">▲</button>
                         </div>
                         <div className="footer-group">
                             <label>MIDI Out</label>
@@ -1888,11 +1881,11 @@ export class Application extends React.Component {
 
                 {/* ── Save Manager Modal ── */}
                 {this.state.showSaveManager && (
-                    <div className="save-manager-overlay" onClick={() => this.setState({ showSaveManager: false })}>
+                    <div className="save-manager-overlay" onClick={() => this.setState({ showSaveManager: false, confirmDeleteIndex: null })}>
                         <div className="save-manager-modal" onClick={(e) => e.stopPropagation()}>
                             <div className="save-manager-header">
                                 <h2>Saved Grids</h2>
-                                <button className="save-manager-close" onClick={() => this.setState({ showSaveManager: false })}>×</button>
+                                <button className="save-manager-close" onClick={() => this.setState({ showSaveManager: false, confirmDeleteIndex: null })}>×</button>
                             </div>
 
                             {/* Save new */}
@@ -1922,18 +1915,30 @@ export class Application extends React.Component {
                                     <div className="save-manager-empty">No saved grids yet. Name your creation above!</div>
                                 ) : (
                                     this.state.savedGrids.map((entry, i) => (
-                                        <div className="save-manager-item" key={i}>
-                                            <div className="save-item-info" onClick={() => this.loadSavedGrid(i)}>
+                                        <div className="save-manager-item" key={i} onClick={() => this.loadSavedGrid(i)}>
+                                            <div className="save-item-play-icon">
+                                                <svg viewBox="0 0 24 24" width="14" height="14"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+                                            </div>
+                                            <div className="save-item-info">
                                                 <span className="save-item-name">{entry.name}</span>
                                                 <span className="save-item-date">{new Date(entry.date).toLocaleDateString()}</span>
                                             </div>
                                             <div className="save-item-actions">
-                                                <button className="save-item-btn load" onClick={() => this.loadSavedGrid(i)} title="Load">
-                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-                                                </button>
-                                                <button className="save-item-btn delete" onClick={() => this.deleteSavedGrid(i)} title="Delete">
-                                                    <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
-                                                </button>
+                                                {this.state.confirmDeleteIndex === i ? (
+                                                    <>
+                                                        <span className="save-item-confirm-label">Delete?</span>
+                                                        <button className="save-item-btn confirm-yes" onClick={(e) => { e.stopPropagation(); this.deleteSavedGrid(i); }} title="Confirm delete">
+                                                            <svg viewBox="0 0 24 24" width="12" height="12"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>
+                                                        </button>
+                                                        <button className="save-item-btn confirm-no" onClick={(e) => { e.stopPropagation(); this.setState({ confirmDeleteIndex: null }); }} title="Cancel">
+                                                            <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor"/></svg>
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button className="save-item-btn delete" onClick={(e) => { e.stopPropagation(); this.setState({ confirmDeleteIndex: i }); }} title="Delete">
+                                                        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor"/></svg>
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ))

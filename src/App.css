@@ -2297,16 +2297,27 @@ select.sel option:checked {
   padding: 8px 10px;
   border-radius: var(--r-sm);
   transition: background 0.12s;
+  cursor: pointer;
 }
 .save-manager-item:hover {
   background: var(--bg-hover);
+}
+.save-item-play-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.save-manager-item:hover .save-item-play-icon {
+  color: var(--accent);
 }
 .save-item-info {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  cursor: pointer;
   min-width: 0;
 }
 .save-item-name {
@@ -2344,14 +2355,34 @@ select.sel option:checked {
   color: var(--text-primary);
   border-color: var(--border-hover);
 }
-.save-item-btn.load:hover {
-  color: var(--accent);
-  border-color: rgba(102,126,234,0.4);
-}
 .save-item-btn.delete:hover {
   background: rgba(255,60,60,0.15);
   color: rgb(255,100,100);
   border-color: rgba(255,60,60,0.4);
+}
+.save-item-btn.delete {
+  width: 32px;
+  height: 32px;
+}
+.save-item-confirm-label {
+  font-size: 0.75em;
+  color: rgb(255,100,100);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.save-item-btn.confirm-yes {
+  color: rgb(255,100,100);
+  border-color: rgba(255,60,60,0.4);
+}
+.save-item-btn.confirm-yes:hover {
+  background: rgba(255,60,60,0.15);
+  color: rgb(255,100,100);
+  border-color: rgba(255,60,60,0.6);
+}
+.save-item-btn.confirm-no:hover {
+  color: var(--text-primary);
 }
 
 /* Save manager footer */
