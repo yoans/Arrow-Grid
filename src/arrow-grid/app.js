@@ -424,7 +424,7 @@ export class Application extends React.Component {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'arrow-grid.json';
+        a.download = 'ag16.json';
         a.click();
         URL.revokeObjectURL(url);
         this._showToast('Exported grid as JSON');
@@ -437,7 +437,7 @@ export class Application extends React.Component {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'arrow-grid-saves.json';
+        a.download = 'ag16-saves.json';
         a.click();
         URL.revokeObjectURL(url);
         this._showToast(`Exported ${data.length} save(s)`);
@@ -852,7 +852,7 @@ export class Application extends React.Component {
         
         if (navigator.share) {
             try {
-                await navigator.share({ title: 'Arrow Grid', url: shareUrl });
+                await navigator.share({ title: 'AG16', url: shareUrl });
             } catch (e) { /* cancelled */ }
         } else {
             try {
@@ -902,7 +902,7 @@ export class Application extends React.Component {
                     <header className="console-header">
                         <h1 className="app-title">
                             <span className="title-arrow">➤</span>
-                            Arrow Grid
+                            AG16
                         </h1>
 
                         <div className="undo-redo-group">
@@ -960,7 +960,7 @@ export class Application extends React.Component {
                             <button
                                 className="hdr-btn"
                                 onClick={() => this.setState({ showInfo: true })}
-                                title="About Arrow Grid"
+                                title="About AG16"
                             >
                                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor"/></svg>
                                 <span>Info</span>
@@ -1811,8 +1811,8 @@ export class Application extends React.Component {
                 {this.state.showIntro && (
                     <div className="intro-overlay" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
                         <div className="intro-modal" onClick={(e) => e.stopPropagation()}>
-                            <h2><span className="title-arrow">➤</span> Arrow Grid</h2>
-                            <p className="intro-tagline">An audio-visual instrument that creates rhythms and melodies from bouncing arrows.</p>
+                            <h2><span className="title-arrow">➤</span> AG16</h2>
+                            <p className="intro-tagline">An audio-visual instrument that creates rhythms and melodies from bouncing arrows on a grid.</p>
 
                             <div className="intro-steps-visual">
                                 <div className="intro-step-card" onClick={() => { const el = document.querySelector('.intro-sound-choice'); el.classList.remove('highlight'); void el.offsetWidth; el.classList.add('highlight'); }}>
@@ -1875,13 +1875,13 @@ export class Application extends React.Component {
                     <div className="info-overlay" onClick={() => this.setState({ showInfo: false })}>
                         <div className="info-modal" onClick={(e) => e.stopPropagation()}>
                             <div className="info-modal-header">
-                                <h2><span className="title-arrow">➤</span> Arrow Grid</h2>
+                                <h2><span className="title-arrow">➤</span> AG16</h2>
                                 <button className="info-modal-close" onClick={() => this.setState({ showInfo: false })}>×</button>
                             </div>
                             <div className="info-modal-body">
                                 <section>
-                                    <h3>What is Arrow Grid?</h3>
-                                    <p>Arrow Grid is an audio-visual instrument that creates rhythms and melodies from bouncing arrows on a grid. Place arrows, hit play, and watch them move — each bounce triggers a musical note. It's part sequencer, part generative art, part toy.</p>
+                                    <h3>What is AG16?</h3>
+                                    <p>AG16 is an audio-visual instrument that creates rhythms and melodies from bouncing arrows on a grid. Place arrows, hit play, and watch them move — each bounce triggers a musical note. It's part sequencer, part generative art, part toy.</p>
                                 </section>
                                 <section>
                                     <h3>Getting Started</h3>
@@ -1890,12 +1890,12 @@ export class Application extends React.Component {
                                         <li><strong>Shift+Click</strong> to remove an arrow.</li>
                                         <li>Press <strong>Space</strong> to play/pause the simulation.</li>
                                         <li>Use <strong>← →</strong> arrow keys to browse built-in presets.</li>
-                                        <li>Press <strong>R</strong> to rotate the arrow direction before placing.</li>
+                                        <li>Use <strong>↑ ↓</strong> arrow keys to switch channels.</li>
                                     </ul>
                                 </section>
                                 <section>
                                     <h3>Channels</h3>
-                                    <p>There are 16 channels, each with its own color. Select a channel before placing arrows to assign them. Each channel has independent volume control and mute toggle. Click a channel's volume button to open a full-height slider overlay.</p>
+                                    <p>There are 16 channels, each with its own color. Select a channel before placing arrows to assign them. Each channel has independent volume control and mute toggle. Click a channel's volume button to open a full-height slider overlay. Click the sound icon to open synth and FX settings.</p>
                                 </section>
                                 <section>
                                     <h3>Walls</h3>
@@ -1934,14 +1934,15 @@ export class Application extends React.Component {
                                         <tbody>
                                             <tr><td><kbd>Space</kbd></td><td>Play / Pause</td></tr>
                                             <tr><td><kbd>← →</kbd></td><td>Previous / Next preset</td></tr>
-                                            <tr><td><kbd>R</kbd></td><td>Rotate arrow direction</td></tr>
+                                            <tr><td><kbd>↑ ↓</kbd></td><td>Previous / Next channel</td></tr>
+                                            <tr><td><kbd>1 2 3 4</kbd></td><td>Arrow behavior (straight, right, bounce, left)</td></tr>
+                                            <tr><td><kbd>M</kbd></td><td>Mute / Unmute</td></tr>
                                             <tr><td><kbd>E</kbd></td><td>Toggle edit mode (delete)</td></tr>
                                             <tr><td><kbd>W</kbd></td><td>Toggle wall mode</td></tr>
                                             <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
                                             <tr><td><kbd>Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
                                             <tr><td><kbd>Ctrl+S</kbd></td><td>Save</td></tr>
                                             <tr><td><kbd>Delete</kbd></td><td>Clear grid</td></tr>
-                                            <tr><td><kbd>1-9</kbd></td><td>Select channel</td></tr>
                                         </tbody>
                                     </table>
                                 </section>

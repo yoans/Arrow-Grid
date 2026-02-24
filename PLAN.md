@@ -1,5 +1,5 @@
 
-# Arrow-Grid Plan
+# AG16 Plan
 
 ## UI Polish
 - [x] Saved Grids modal: add delete confirmation (e.g. "Are you sure?" prompt or hold-to-delete) to prevent accidental deletion
@@ -9,7 +9,7 @@
 - [ ] Add user tracking (e.g. Google Analytics, Plausible, or similar)
 
 ## Branding
-- [ ] Rename project to **AG16**
+- [x] Rename project to **AG16**
 
 ## Audio
 - [x] Implement per-channel browser synth (Web Audio API, replaced Tone.js)
